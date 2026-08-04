@@ -1,0 +1,99 @@
+classDiagram
+    %% ---------- 前端（JS）侧 ----------
+    class CurrentFile {
+        +String path
+        +String kind  // "html" | "markdown"
+    }
+
+    class FileIO {
+        +openFileViaDialog() Promise~void~
+        +openFileWithPath(path) Promise~void~
+        +saveFile() Promise~void~
+        +saveFileAs() Promise~void~
+        -invokeOpen(path) Promise~FileContent~
+        -invokeSave(path, kind, content) Promise~SaveResult~
+    }
+
+    class MarkdownBridge {
+        +loadMarkdown(mdText) void
+        +serializeMarkdown() String
+    }
+
+    class EditorCore {
+        +loadHtmlDocument(text) void
+        +buildFullDocument() String
+        +commitHistory() void
+        +undo() void
+        +redo() void
+    }
+
+    class DragDropHandler {
+        +listenDragDrop() void
+    }
+
+    class DialogBridge {
+        +pickFile() Promise~String|null~
+        +pickSave(kind) Promise~String|null~
+        +pickImage() Promise~String|null~
+    }
+
+    class TauriGlobalAPI {
+        <<external>>
+        +tauri.invoke(cmd, args)
+        +dialog.open(opts)
+        +dialog.save(opts)
+        +event.listen(evt, cb)
+    }
+
+    %% ---------- Rust 侧 ----------
+    class Commands {
+        <<Rust #tauri::command>>
+        +open_file(path) Result~FileContent,String~
+        +save_file(path, kind, content) Result~SaveResult,String~
+        +read_image_base64(path) Result~ImageData,String~
+        +get_app_version() String
+    }
+
+    class FileKind {
+        <<Rust>>
+        +detect_kind(path) Result~String,String~
+    }
+
+    class FileContent {
+        <<Rust struct>>
+        +String path
+        +String kind
+        +String content
+    }
+
+    class SaveResult {
+        <<Rust struct>>
+        +String path
+        +String kind
+    }
+
+    class ImageData {
+        <<Rust struct>>
+        +String mime
+        +String data
+    }
+
+    %% ---------- 关系 ----------
+    FileIO ..> CurrentFile : 维护
+    FileIO ..> DialogBridge : 使用
+    FileIO ..> TauriGlobalAPI : invoke
+    FileIO ..> EditorCore : 加载HTML
+    FileIO ..> MarkdownBridge : 加载/序列化MD
+    MarkdownBridge ..> EditorCore : 注入编辑器
+
+    DragDropHandler ..> TauriGlobalAPI : listen(tauri://drag-drop)
+    DragDropHandler ..> FileIO : openFileWithPath(path)
+
+    DialogBridge ..> TauriGlobalAPI : dialog.open / save
+
+    TauriGlobalAPI ..> Commands : invoke 调用
+
+    Commands ..> FileKind : detect_kind
+    Commands ..> FileContent : 返回
+    Commands ..> SaveResult : 返回
+    Commands ..> ImageData : 返回

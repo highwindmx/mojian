@@ -1,0 +1,105 @@
+%% ============ 11.1 打开文件（菜单/对话框） ============
+sequenceDiagram
+    actor U as 用户
+    participant TB as 工具栏按钮
+    participant FIO as FileIO(前端)
+    participant DLG as DialogBridge
+    participant T as Tauri全局API
+    participant C as Commands(Rust)
+    participant FK as FileKind
+    participant ED as EditorCore/MarkdownBridge
+
+    U->>TB: 点击"打开"
+    TB->>FIO: openFileViaDialog()
+    FIO->>DLG: pickFile()
+    DLG->>T: dialog.open(filters)
+    T-->>DLG: 返回 path 或 null
+    alt 用户取消
+        DLG-->>FIO: null
+        FIO-->>TB: 结束
+    else 选定文件
+        DLG-->>FIO: path
+        FIO->>T: invoke("open_file", {path})
+        T->>C: open_file(path)
+        C->>FK: detect_kind(path)
+        FK-->>C: "html" | "markdown"
+        C->>C: fs::read_to_string(path)
+        C-->>T: FileContent{path,kind,content}
+        T-->>FIO: FileContent
+        FIO->>FIO: currentFile = {path, kind}
+        alt kind == html
+            FIO->>ED: loadHtmlDocument(content)
+        else kind == markdown
+            FIO->>ED: MarkdownBridge.loadMarkdown(content)
+        end
+        ED-->>FIO: 编辑器已加载
+        FIO-->>TB: setStatus("已打开: path")
+    end
+
+%% ============ 11.2 保存文件（覆盖写回） ============
+sequenceDiagram
+    actor U as 用户
+    participant TB as 工具栏按钮
+    participant FIO as FileIO(前端)
+    participant T as Tauri全局API
+    participant C as Commands(Rust)
+    participant ED as EditorCore/MarkdownBridge
+
+    U->>TB: 点击"保存"
+    TB->>FIO: saveFile()
+    FIO->>FIO: content = ?
+    alt currentFile.kind == html
+        FIO->>ED: buildFullDocument()
+        ED-->>FIO: HTML文本
+    else currentFile.kind == markdown
+        FIO->>ED: MarkdownBridge.serializeMarkdown()
+        ED-->>FIO: MD文本
+    end
+    FIO->>T: invoke("save_file", {path, kind, content})
+    T->>C: save_file(path, kind, content)
+    C->>C: fs::write(path, content)
+    C-->>T: SaveResult{path, kind}
+    T-->>FIO: 成功
+    FIO-->>TB: setStatus("已保存: path")
+
+%% ============ 11.3 拖放加载 ============
+sequenceDiagram
+    actor U as 用户
+    participant W as 应用窗口
+    participant T as Tauri(事件)
+    participant DD as DragDropHandler(前端)
+    participant FIO as FileIO(前端)
+    participant C as Commands(Rust)
+
+    U->>W: 拖入文件
+    W->>T: 触发 tauri://drag-drop{paths}
+    T-->>DD: listen 回调(paths[])
+    loop 每个 path
+        DD->>FIO: openFileWithPath(path)
+        FIO->>T: invoke("open_file", {path})
+        T->>C: open_file(path)
+        C-->>T: FileContent
+        T-->>FIO: 加载到编辑器
+    end
+
+%% ============ 11.4 图片插入（改造后） ============
+sequenceDiagram
+    actor U as 用户
+    participant IMG as 图片对话框
+    participant DLG as DialogBridge
+    participant T as Tauri全局API
+    participant C as Commands(Rust)
+    participant ED as EditorCore
+
+    U->>IMG: 选择本地图片并确定
+    IMG->>DLG: pickImage()
+    DLG->>T: dialog.open(图片filters)
+    T-->>DLG: 图片 path
+    DLG-->>IMG: path
+    IMG->>T: invoke("read_image_base64", {path})
+    T->>C: read_image_base64(path)
+    C->>C: fs::read + base64
+    C-->>T: ImageData{mime, data}
+    T-->>IMG: data URL
+    IMG->>ED: insertImage(dataURL)  // 过 isSafeImage
+    ED-->>IMG: 图片已插入
