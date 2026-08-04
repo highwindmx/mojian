@@ -78,6 +78,8 @@
     H6:         { name:"标题 6", kind:"block", value:"H6", title:"标题 6", label:'H6' },
     insertUnorderedList: { name:"无序列表", kind:"cmd", value:"insertUnorderedList", title:"无序列表", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.4" fill="currentColor" stroke="none"/></svg>' },
     insertOrderedList:   { name:"有序列表", kind:"cmd", value:"insertOrderedList", title:"有序列表", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="10" y1="6" x2="20" y2="6"/><line x1="10" y1="12" x2="20" y2="12"/><line x1="10" y1="18" x2="20" y2="18"/><text x="2" y="8" font-size="7" fill="currentColor" stroke="none">1</text><text x="2" y="14" font-size="7" fill="currentColor" stroke="none">2</text><text x="2" y="20" font-size="7" fill="currentColor" stroke="none">3</text></svg>' },
+    indent:     { name:"增加缩进", kind:"cmd", value:"indent", title:"增加缩进（需先选中列表项或引用块）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="5" x2="21" y2="5"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="3" y1="19" x2="21" y2="19"/><polyline points="3 9 7 12 3 15"/></svg>' },
+    outdent:    { name:"减少缩进", kind:"cmd", value:"outdent", title:"减少缩进（需先选中列表项或引用块）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="5" x2="21" y2="5"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="3" y1="19" x2="21" y2="19"/><polyline points="7 9 3 12 7 15"/></svg>' },
     BLOCKQUOTE: { name:"引用块", kind:"block", value:"BLOCKQUOTE", title:"引用块", svg:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 7h4v6H7v2H5V9a2 2 0 0 1 2-2zm8 0h4v6h-4v2h-2V9a2 2 0 0 1 2-2z" transform="scale(0.9) translate(1 1)"/></svg>' },
     link:       { name:"链接", kind:"action", value:"link", title:"插入/编辑链接", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></svg>' },
     image:      { name:"图片", kind:"action", value:"image", title:"插入图片", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M21 16l-5-5L5 20"/></svg>' },
@@ -102,7 +104,7 @@
     "__divider__",
     "H1","H2","H3","H4","H5","H6",
     "__divider__",
-    "insertUnorderedList","insertOrderedList","BLOCKQUOTE","link",
+    "insertUnorderedList","insertOrderedList","indent","outdent","BLOCKQUOTE","link",
     "__divider__",
     "image","video","table","code","hr",
     "__divider__",
@@ -1806,6 +1808,12 @@
     } catch (e) {}
     // 恢复上次源码分栏
     if (appConfig.sourceSplit) enterSplitMode();
+    // 处理文件关联：Windows 双击 .md/.html 时路径作为命令行参数传入，
+    // Tauri 不会自动打开，这里主动读取并在启动后加载该文件。
+    try {
+      const initialFile = await tauriInvoke("get_initial_file");
+      if (initialFile) openFileWithPath(initialFile);
+    } catch (e) {}
   }
 
   init();

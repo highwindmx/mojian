@@ -186,6 +186,29 @@ fn infer_mime(path: &str) -> String {
     }
 }
 
+/// 返回启动时通过命令行参数传入、需要打开的本地文件路径（文件关联双击场景）。
+/// Windows 双击 .md/.html 时，系统把路径作为 argv 传给 exe，Tauri 不会自动打开，
+/// 故在此读取：仅取第一个后缀为 .md/.markdown/.html/.htm 且确实存在的文件参数；无则 None。
+/// 兼容以 file:// 形式传入的路径（剥离前缀与多余斜杠）。
+#[tauri::command]
+pub fn get_initial_file() -> Option<String> {
+    for arg in std::env::args().skip(1) {
+        let path = match arg.strip_prefix("file://") {
+            Some(s) => s.strip_prefix('/').unwrap_or(s).to_string(),
+            None => arg.clone(),
+        };
+        let lower = path.to_lowercase();
+        let is_supported = lower.ends_with(".md")
+            || lower.ends_with(".markdown")
+            || lower.ends_with(".html")
+            || lower.ends_with(".htm");
+        if is_supported && std::path::Path::new(&path).is_file() {
+            return Some(path);
+        }
+    }
+    None
+}
+
 /// 不依赖外部 crate 的 base64 编码实现（标准字母表，输出含 '=' 填充）。
 fn base64_encode(bytes: &[u8]) -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
