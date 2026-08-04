@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="src-tauri/icons/icon.png" width="128" alt="墨笺 logo" />
+</div>
+
 # 墨笺 (Mojian)
 
 本地 **HTML / Markdown 双格式所见即所得编辑器** —— 基于 **Tauri 2（Rust + 系统 WebView）** 的轻量桌面应用。
