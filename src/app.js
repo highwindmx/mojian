@@ -37,6 +37,252 @@
   }
 
   /* =====================================================================
+   * 配置持久化（写入 exe 同目录 mojian.config.json）
+   * ===================================================================== */
+  const DEFAULT_CONFIG = {
+    windowSize: null,      // { w, h } 物理像素；关闭前的窗格大小
+    theme: "light",        // light | sepia(豆沙绿) | yellow(养眼黄) | dark
+    toolbar: null,         // 工具栏自定义布局（按钮顺序/显隐），null=使用默认
+    defaultEncoding: "",   // ""=自动(UTF-8 优先, GBK 兜底) | "utf-8" | "gbk"
+    sourceSplit: false,    // 源码分栏模式（左渲染右源码）
+    toolbarVisible: true,
+  };
+  let appConfig = Object.assign({}, DEFAULT_CONFIG);
+
+  /* =====================================================================
+   * 工具栏定义（数据驱动：支持自定义显隐与拖拽排序）
+   * 每个条目：{ name, kind:'action'|'cmd'|'block'|'zoomlabel', value, svg, label, title, keep }
+   *  - action/cmd/block 对应 data-action/data-cmd/data-block（与既有 click 委托一致）
+   *  - keep:true 表示核心控件（缩放/分栏/源码），始终显示、不参与显隐、不可隐藏
+   * DEFAULT_ORDER 中的 "__divider__" 为分组分隔符；"ZOOMLABEL" 为缩放百分比标签。
+   * ===================================================================== */
+  const TOOLBAR_ITEMS = {
+    new:        { name:"新建", kind:"action", value:"new", title:"新建文档（HTML 或 Markdown）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>' },
+    open:       { name:"打开", kind:"action", value:"open", title:"打开 HTML / Markdown 文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>' },
+    save:       { name:"保存", kind:"action", value:"save", title:"保存（写回原文件）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>' },
+    saveas:     { name:"另存为", kind:"action", value:"saveas", title:"另存为…", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><polyline points="8 11 12 15 16 11"/><path d="M5 19h14"/></svg>' },
+    export:     { name:"导出", kind:"action", value:"export", title:"导出为自包含 HTML 文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 21V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/><polyline points="9 13 12 16 15 13"/><line x1="12" y1="16" x2="12" y2="9"/></svg>' },
+    clear:      { name:"清空", kind:"action", value:"clear", title:"清空草稿", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>' },
+    undo:       { name:"撤销", kind:"action", value:"undo", title:"撤销 (Ctrl+Z)", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>' },
+    redo:       { name:"重做", kind:"action", value:"redo", title:"重做 (Ctrl+Y)", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg>' },
+    bold:       { name:"加粗", kind:"cmd", value:"bold", title:"加粗 (Ctrl+B)", label:'<b>B</b>' },
+    italic:     { name:"斜体", kind:"cmd", value:"italic", title:"斜体 (Ctrl+I)", label:'<i>I</i>' },
+    underline:  { name:"下划线", kind:"cmd", value:"underline", title:"下划线 (Ctrl+U)", label:'<u>U</u>' },
+    forecolor:  { name:"文字颜色", kind:"action", value:"forecolor", title:"文字颜色（选中文字后点击取色）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16"/><path d="M12 4l-3.2 8h6.4L12 4z" fill="currentColor" stroke="none"/></svg>' },
+    backcolor:  { name:"背景颜色", kind:"action", value:"backcolor", title:"背景颜色 / 高亮（选中文字后点击取色）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v4h6V3" fill="#fde68a" stroke="none"/></svg>' },
+    H1:         { name:"标题 1", kind:"block", value:"H1", title:"标题 1", label:'H1' },
+    H2:         { name:"标题 2", kind:"block", value:"H2", title:"标题 2", label:'H2' },
+    H3:         { name:"标题 3", kind:"block", value:"H3", title:"标题 3", label:'H3' },
+    H4:         { name:"标题 4", kind:"block", value:"H4", title:"标题 4", label:'H4' },
+    H5:         { name:"标题 5", kind:"block", value:"H5", title:"标题 5", label:'H5' },
+    H6:         { name:"标题 6", kind:"block", value:"H6", title:"标题 6", label:'H6' },
+    insertUnorderedList: { name:"无序列表", kind:"cmd", value:"insertUnorderedList", title:"无序列表", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.4" fill="currentColor" stroke="none"/></svg>' },
+    insertOrderedList:   { name:"有序列表", kind:"cmd", value:"insertOrderedList", title:"有序列表", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="10" y1="6" x2="20" y2="6"/><line x1="10" y1="12" x2="20" y2="12"/><line x1="10" y1="18" x2="20" y2="18"/><text x="2" y="8" font-size="7" fill="currentColor" stroke="none">1</text><text x="2" y="14" font-size="7" fill="currentColor" stroke="none">2</text><text x="2" y="20" font-size="7" fill="currentColor" stroke="none">3</text></svg>' },
+    BLOCKQUOTE: { name:"引用块", kind:"block", value:"BLOCKQUOTE", title:"引用块", svg:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 7h4v6H7v2H5V9a2 2 0 0 1 2-2zm8 0h4v6h-4v2h-2V9a2 2 0 0 1 2-2z" transform="scale(0.9) translate(1 1)"/></svg>' },
+    link:       { name:"链接", kind:"action", value:"link", title:"插入/编辑链接", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></svg>' },
+    image:      { name:"图片", kind:"action", value:"image", title:"插入图片", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M21 16l-5-5L5 20"/></svg>' },
+    video:      { name:"视频", kind:"action", value:"video", title:"插入视频 / 嵌入播放器", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><polygon points="10 9 15 12 10 15" fill="currentColor" stroke="none"/></svg>' },
+    table:      { name:"表格", kind:"action", value:"table", title:"插入表格 (3×3)", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="1.5"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/></svg>' },
+    code:       { name:"代码块", kind:"action", value:"code", title:"插入代码块", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 7 4 12 8 17"/><polyline points="16 7 20 12 16 17"/></svg>' },
+    hr:         { name:"分割线", kind:"action", value:"hr", title:"插入分割线", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="12" x2="20" y2="12"/></svg>' },
+    find:       { name:"查找替换", kind:"action", value:"find", title:"查找 / 替换", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>' },
+    zoomout:    { name:"缩小", kind:"action", value:"zoom-out", title:"缩小 (Ctrl+-)", label:'−', keep:true },
+    zoomin:     { name:"放大", kind:"action", value:"zoom-in", title:"放大 (Ctrl+=)", label:'+', keep:true },
+    split:      { name:"分栏", kind:"action", value:"split", title:"源码分栏（左渲染 / 右源码）", label:'分栏', keep:true },
+    source:     { name:"源码", kind:"action", value:"source", title:"切换源码 / 可视化编辑", label:'源码', keep:true },
+    ZOOMLABEL:  { kind:"zoomlabel", keep:true },
+  };
+
+  const DEFAULT_ORDER = [
+    "new","open","save","saveas","export","clear",
+    "__divider__",
+    "undo","redo",
+    "__divider__",
+    "bold","italic","underline","forecolor","backcolor",
+    "__divider__",
+    "H1","H2","H3","H4","H5","H6",
+    "__divider__",
+    "insertUnorderedList","insertOrderedList","BLOCKQUOTE","link",
+    "__divider__",
+    "image","video","table","code","hr",
+    "__divider__",
+    "find",
+    "__divider__",
+    "zoomout","ZOOMLABEL","zoomin","split","source",
+  ];
+
+  /** 解析工具栏配置（缺省回退默认顺序），返回 { order, hidden } */
+  function getToolbarConfig() {
+    const t = appConfig.toolbar || {};
+    return {
+      order: Array.isArray(t.order) && t.order.length ? t.order : DEFAULT_ORDER.slice(),
+      hidden: (t.hidden && typeof t.hidden === "object") ? t.hidden : {},
+    };
+  }
+
+  /** 依据配置动态渲染工具栏（分组 / 缩放标签 / 显隐 / 可拖拽） */
+  function renderToolbar() {
+    if (!toolbar) return;
+    const cfg = getToolbarConfig();
+    toolbar.innerHTML = "";
+    let lastWasDivider = false;
+    cfg.order.forEach(function (token) {
+      if (token === "__divider__") {
+        if (lastWasDivider) return;
+        const d = document.createElement("div");
+        d.className = "divider";
+        toolbar.appendChild(d);
+        lastWasDivider = true;
+        return;
+      }
+      const item = TOOLBAR_ITEMS[token];
+      if (!item) return;
+      if (cfg.hidden[token] && !item.keep) { lastWasDivider = false; return; }
+      lastWasDivider = false;
+      if (item.kind === "zoomlabel") {
+        const sp = document.createElement("span");
+        sp.className = "zoom-label";
+        sp.id = "zoom-label";
+        sp.textContent = Math.round(currentZoom * 100) + "%";
+        toolbar.appendChild(sp);
+        return;
+      }
+      const btn = document.createElement("button");
+      if (item.kind === "cmd") btn.dataset.cmd = item.value;
+      else if (item.kind === "block") btn.dataset.block = item.value;
+      else btn.dataset.action = item.value;
+      btn.title = item.title || item.name;
+      if (item.svg) btn.innerHTML = item.svg;
+      else if (item.label) btn.innerHTML = item.label;
+      if (item.keep) btn.classList.add("keep");
+      toolbar.appendChild(btn);
+    });
+  }
+
+  /* 自定义弹窗：勾选显隐（核心 keep 控件与缩放标签不参与） */
+  const toolbarSettingsModal = document.getElementById("toolbar-settings");
+  const toolbarSettingsList = document.getElementById("toolbar-settings-list");
+  const toolbarSettingsBtn = document.getElementById("toolbar-settings-btn");
+  function openToolbarSettings() {
+    if (!toolbarSettingsList) return;
+    const cfg = getToolbarConfig();
+    toolbarSettingsList.innerHTML = "";
+    // 依据实际 order 渲染，保证列表顺序与工具栏一致；分隔符/固定项(keep、缩放标签)不可排序
+    cfg.order.forEach(function (token) {
+      if (token === "__divider__") {
+        const hr = document.createElement("div");
+        hr.className = "tb-set-divider";
+        toolbarSettingsList.appendChild(hr);
+        return;
+      }
+      const item = TOOLBAR_ITEMS[token];
+      if (!item || item.keep || item.kind === "zoomlabel") return;
+      const idx = cfg.order.indexOf(token);
+      let upEnabled = idx > 0, downEnabled = idx < cfg.order.length - 1;
+      if (upEnabled) {
+        const prev = cfg.order[idx - 1];
+        if (prev === "__divider__") upEnabled = false;
+        else { const pi = TOOLBAR_ITEMS[prev]; if (pi && (pi.keep || pi.kind === "zoomlabel")) upEnabled = false; }
+      }
+      if (downEnabled) {
+        const next = cfg.order[idx + 1];
+        if (next === "__divider__") downEnabled = false;
+        else { const ni = TOOLBAR_ITEMS[next]; if (ni && (ni.keep || ni.kind === "zoomlabel")) downEnabled = false; }
+      }
+      const row = document.createElement("div");
+      row.className = "tb-set-row";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !cfg.hidden[token];
+      cb.dataset.id = token;
+      cb.addEventListener("change", function () {
+        const c = getToolbarConfig();
+        if (cb.checked) delete c.hidden[token];
+        else c.hidden[token] = true;
+        appConfig.toolbar = { order: c.order.slice(), hidden: c.hidden };
+        renderToolbar();
+        saveConfig({ toolbar: appConfig.toolbar });
+      });
+      const span = document.createElement("span");
+      span.textContent = item.name;
+      const up = document.createElement("button");
+      up.type = "button";
+      up.className = "tb-move";
+      up.textContent = "↑";
+      up.title = "上移";
+      up.disabled = !upEnabled;
+      up.addEventListener("click", function (e) { e.preventDefault(); moveToolbarItem(token, -1); });
+      const down = document.createElement("button");
+      down.type = "button";
+      down.className = "tb-move";
+      down.textContent = "↓";
+      down.title = "下移";
+      down.disabled = !downEnabled;
+      down.addEventListener("click", function (e) { e.preventDefault(); moveToolbarItem(token, 1); });
+      row.appendChild(cb);
+      row.appendChild(span);
+      row.appendChild(up);
+      row.appendChild(down);
+      toolbarSettingsList.appendChild(row);
+    });
+    if (toolbarSettingsModal) openModal(toolbarSettingsModal);
+  }
+
+  // 在定制界面内用 ↑/↓ 调整按钮顺序（不跨越分隔符与固定项）
+  function moveToolbarItem(token, dir) {
+    const cfg = getToolbarConfig();
+    const order = cfg.order.slice();
+    const idx = order.indexOf(token);
+    if (idx < 0) return;
+    const swap = idx + dir;
+    if (swap < 0 || swap >= order.length) return;
+    const other = order[swap];
+    if (other === "__divider__") return;
+    const oItem = TOOLBAR_ITEMS[other];
+    if (oItem && (oItem.keep || oItem.kind === "zoomlabel")) return;
+    order[idx] = other;
+    order[swap] = token;
+    appConfig.toolbar = { order: order, hidden: cfg.hidden };
+    renderToolbar();
+    saveConfig({ toolbar: appConfig.toolbar });
+    openToolbarSettings(); // 重渲染列表以刷新按钮可用状态
+  }
+  if (toolbarSettingsBtn) toolbarSettingsBtn.addEventListener("click", openToolbarSettings);
+  if (toolbarSettingsModal) {
+    const ok = document.getElementById("toolbar-settings-ok");
+    const reset = document.getElementById("toolbar-reset");
+    if (ok) ok.addEventListener("click", function () {
+      if (toolbarSettingsModal) closeModal(toolbarSettingsModal);
+    });
+    if (reset) reset.addEventListener("click", function () {
+      appConfig.toolbar = null;
+      renderToolbar();
+      saveConfig({ toolbar: null });
+    });
+  }
+
+  async function loadConfig() {
+    try {
+      const raw = await tauriInvoke("read_config");
+      const parsed = JSON.parse(raw || "{}");
+      appConfig = Object.assign({}, DEFAULT_CONFIG, parsed);
+    } catch (e) {
+      appConfig = Object.assign({}, DEFAULT_CONFIG);
+    }
+  }
+
+  async function saveConfig(patch) {
+    if (patch) Object.assign(appConfig, patch);
+    try {
+      await tauriInvoke("write_config", { content: JSON.stringify(appConfig, null, 2) });
+    } catch (e) {
+      console.warn("写入配置失败：", e);
+    }
+  }
+
+  function getConfig() { return appConfig; }
+
+  /* =====================================================================
    * 常量与全局状态
    * ===================================================================== */
   const STORAGE_KEY = "htmlEditorDraft";
@@ -48,7 +294,7 @@
   const editor = document.getElementById("editor");
   const toolbar = document.getElementById("toolbar");
   const sourceView = document.getElementById("source-view");
-  const zoomLabel = document.getElementById("zoom-label");
+  const editorWrap = document.getElementById("editor-wrap");
   const folderBtn = document.getElementById("open-folder");
   const filePathEl = document.getElementById("file-path");
 
@@ -80,8 +326,10 @@
   let pendingImageDataUrl = null;
   /** 当前页面缩放比例（0.5–2.0） */
   let currentZoom = 1;
-  /** 是否处于源码视图 */
+  /** 是否处于源码视图（单视图：仅源码文本框） */
   let sourceMode = false;
+  /** 是否处于源码分栏模式（左渲染 / 右源码，双向同步） */
+  let splitMode = false;
 
   /* =====================================================================
    * 工具函数：HTML 转义、URL 安全校验、时间戳
@@ -478,14 +726,89 @@
     }
   });
 
+  /* =====================================================================
+   * 视频嵌入：本地视频转 base64 / 外链直链或嵌入页
+   * ===================================================================== */
+  const videoDialog = document.getElementById("video-dialog");
+  const videoPickBtn = document.getElementById("video-pick");
+  const videoUrlInput = document.getElementById("video-url");
+  let pendingVideoDataUrl = null;
+
+  function handleVideo() {
+    saveSelection();
+    videoUrlInput.value = "";
+    pendingVideoDataUrl = null;
+    videoPickBtn.textContent = "选择本地视频…";
+    openModal(videoDialog);
+  }
+
+  videoPickBtn.addEventListener("click", async function () {
+    if (!TAURI) {
+      uiAlert("当前环境不支持选择本地视频，请填写视频链接。");
+      return;
+    }
+    let p;
+    try {
+      p = await tauriOpen({
+        multiple: false,
+        filters: [{ name: "视频", extensions: ["mp4", "webm", "ogg", "ogv", "mov", "avi"] }],
+      });
+    } catch (e) { return; }
+    if (!p) return;
+    try {
+      const v = await tauriInvoke("read_image_base64", { path: p });
+      pendingVideoDataUrl = "data:" + v.mime + ";base64," + v.data;
+      videoPickBtn.textContent = "已选择：" + p.split(/[\\/]/).pop();
+    } catch (e) { uiAlert("读取视频失败：" + e); }
+  });
+
+  document.getElementById("video-ok").addEventListener("click", function () {
+    const url = videoUrlInput.value.trim();
+    closeModal(videoDialog);
+    if (pendingVideoDataUrl) {
+      if (!/^data:video\//i.test(pendingVideoDataUrl)) {
+        uiAlert("仅支持常见视频格式。");
+        pendingVideoDataUrl = null;
+        videoPickBtn.textContent = "选择本地视频…";
+        return;
+      }
+      insertVideo(pendingVideoDataUrl, true);
+      pendingVideoDataUrl = null;
+      videoPickBtn.textContent = "选择本地视频…";
+    } else if (url) {
+      if (!/^https?:/i.test(url)) {
+        uiAlert("视频地址需以 http(s):// 开头，或使用本地上传。");
+        return;
+      }
+      insertVideo(url, false);
+    } else {
+      uiAlert("请选择本地图片或填写视频链接。");
+    }
+  });
+
+  function insertVideo(url, isData) {
+    let html;
+    if (isData) {
+      html = '<video controls src="' + escapeAttr(url) + '"></video>';
+    } else if (/\.(mp4|webm|ogg|ogv|mov|avi)(\?|#|$)/i.test(url)) {
+      html = '<video controls src="' + escapeAttr(url) + '"></video>';
+    } else {
+      html = '<iframe src="' + escapeAttr(url) +
+        '" width="640" height="360" frameborder="0" allowfullscreen allow="autoplay; encrypted-media"></iframe>';
+    }
+    insertHTML(html);
+  }
+
+  // 取消按钮：关闭其所在的 modal（用 closest 而非写死，避免漏掉 video / toolbar-settings 等弹窗）
   document.querySelectorAll("[data-close]").forEach((btn) => {
     btn.addEventListener("click", function () {
-      closeModal(linkDialog);
-      closeModal(imageDialog);
+      const modal = btn.closest(".modal");
+      if (modal) closeModal(modal);
     });
   });
 
-  [linkDialog, imageDialog].forEach((modal) => {
+  [linkDialog, imageDialog, videoDialog, toolbarSettingsModal].forEach((modal) => {
+    if (!modal) return;
     modal.addEventListener("click", function (e) {
       if (e.target === modal) closeModal(modal);
     });
@@ -631,31 +954,31 @@
     return null;
   }
 
-  /** 启动时恢复上次窗口尺寸（最小尺寸由 tauri.conf.json 的 minWidth/minHeight 保护） */
+  /** 启动时恢复上次窗口尺寸（来自同目录配置文件；最小尺寸由 tauri.conf.json 兜底） */
   async function restoreWindowSize() {
     const w = tauriWindowApi();
     if (!w) return;
     try {
-      const raw = localStorage.getItem("windowSize");
-      if (!raw) return;
-      const s = JSON.parse(raw);
+      const s = appConfig.windowSize;
+      if (!s || !s.w || !s.h) return;
       const win = w.getCurrentWindow();
       // 用 PhysicalSize 读写保持一致，避免高 DPI 下的单位换算误差
       await win.setSize(new w.PhysicalSize(
-        Math.max(1, Math.round(s.w) || 600),
-        Math.max(1, Math.round(s.h) || 400)
+        Math.max(1, Math.round(s.w)),
+        Math.max(1, Math.round(s.h))
       ));
     } catch (e) { /* 窗口尺寸恢复失败不致命 */ }
   }
 
-  /** 保存当前窗口尺寸到 localStorage（物理像素，与读取保持一致） */
+  /** 保存当前窗口尺寸到配置文件（物理像素，与读取保持一致） */
   async function saveWindowSize() {
     const w = tauriWindowApi();
     if (!w) return;
     try {
       const win = w.getCurrentWindow();
       const size = await win.innerSize(); // 返回 PhysicalSize
-      localStorage.setItem("windowSize", JSON.stringify({ w: size.width, h: size.height }));
+      appConfig.windowSize = { w: size.width, h: size.height };
+      await saveConfig();
     } catch (e) { /* 忽略 */ }
   }
 
@@ -816,12 +1139,14 @@
     if (!TAURI) { setStatus("当前环境不支持文件读取。", true); return; }
     let res;
     try {
-      res = await tauriInvoke("open_file", { path });
+      const enc = (getConfig().defaultEncoding || "") || undefined;
+      res = await tauriInvoke("open_file", { path, encoding: enc });
     } catch (e) {
       setStatus("打开失败：" + e, true);
       return;
     }
     if (sourceMode) exitSourceMode();
+    else if (splitMode) exitSplitMode();
     currentFile = { path: res.path, kind: res.kind };
     setFilePath(res.path, true);
     if (res.kind === "markdown") {
@@ -841,7 +1166,8 @@
       content = buildFullDocument();
     }
     try {
-      await tauriInvoke("save_file", { path, kind, content });
+      const enc = (getConfig().defaultEncoding || "") || undefined;
+      await tauriInvoke("save_file", { path, kind, content, encoding: enc });
       setStatus("已保存：" + path);
     } catch (e) {
       setStatus("保存失败：" + e, true);
@@ -909,7 +1235,8 @@
     if (editor) editor.style.zoom = String(currentZoom);
     const sv = document.getElementById("source-view");
     if (sv) sv.style.zoom = String(currentZoom);
-    if (zoomLabel) zoomLabel.textContent = Math.round(currentZoom * 100) + "%";
+    const zl = document.getElementById("zoom-label");
+    if (zl) zl.textContent = Math.round(currentZoom * 100) + "%";
     if (persist !== false) {
       try { localStorage.setItem("editorZoom", String(currentZoom)); } catch (e) {}
     }
@@ -937,7 +1264,16 @@
     }
   }
 
+  /** 同步源码/分栏按钮高亮态 */
+  function setSourceBtnActive() {
+    const srcBtn = toolbar.querySelector('[data-action="source"]');
+    if (srcBtn) srcBtn.classList.toggle("active", sourceMode || splitMode);
+    const spBtn = toolbar.querySelector('[data-action="split"]');
+    if (spBtn) spBtn.classList.toggle("active", splitMode);
+  }
+
   function enterSourceMode() {
+    if (splitMode) exitSplitMode();
     if (sourceMode) return;
     let src;
     if (currentFile && currentFile.kind === "markdown") {
@@ -950,8 +1286,7 @@
     sourceView.style.display = "block";
     sourceMode = true;
     toolbar.classList.add("source-mode");
-    const srcBtn = toolbar.querySelector('[data-action="source"]');
-    if (srcBtn) srcBtn.classList.add("active");
+    setSourceBtnActive();
     sourceView.focus();
   }
 
@@ -962,12 +1297,43 @@
     editor.style.display = "";
     sourceMode = false;
     toolbar.classList.remove("source-mode");
-    const srcBtn = toolbar.querySelector('[data-action="source"]');
-    if (srcBtn) srcBtn.classList.remove("active");
+    setSourceBtnActive();
     editor.focus();
   }
 
+  /** 进入分栏：左渲染区 + 右源码并排显示，双向防抖同步 */
+  function enterSplitMode() {
+    if (splitMode) return;
+    if (sourceMode) exitSourceMode();
+    let src;
+    if (currentFile && currentFile.kind === "markdown") src = serializeMarkdown();
+    else src = editor.innerHTML;
+    sourceView.value = src;
+    editor.style.display = "";
+    sourceView.style.display = "block";
+    if (editorWrap) editorWrap.classList.add("split");
+    splitMode = true;
+    setSourceBtnActive();
+    saveConfig({ sourceSplit: true });
+  }
+
+  /** 退出分栏（回到单视图可视化） */
+  function exitSplitMode() {
+    if (!splitMode) return;
+    if (editorWrap) editorWrap.classList.remove("split");
+    sourceView.style.display = "none";
+    splitMode = false;
+    setSourceBtnActive();
+    saveConfig({ sourceSplit: false });
+  }
+
+  function toggleSplitMode() {
+    if (splitMode) exitSplitMode();
+    else enterSplitMode();
+  }
+
   function toggleSourceMode() {
+    if (splitMode) { exitSplitMode(); enterSourceMode(); return; }
     if (sourceMode) exitSourceMode();
     else enterSourceMode();
   }
@@ -1043,13 +1409,173 @@
   if (folderBtn) folderBtn.addEventListener("click", openContainingFolder);
 
   /* =====================================================================
+   * 主题切换（持久化到配置文件）
+   * ===================================================================== */
+  function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme || "light");
+    const sel = document.getElementById("theme-select");
+    if (sel) sel.value = theme || "light";
+  }
+
+  const themeSelect = document.getElementById("theme-select");
+  if (themeSelect) {
+    themeSelect.addEventListener("change", function () {
+      applyTheme(themeSelect.value);
+      saveConfig({ theme: themeSelect.value });
+    });
+  }
+
+  const encodingSelect = document.getElementById("encoding-select");
+  if (encodingSelect) {
+    encodingSelect.value = appConfig.defaultEncoding || "";
+    encodingSelect.addEventListener("change", function () {
+      saveConfig({ defaultEncoding: encodingSelect.value });
+    });
+  }
+
+  /* =====================================================================
    * 事件绑定
    * ===================================================================== */
+  /* =====================================================================
+   * 查找 / 替换（遍历文本节点，保持原有格式）
+   * ===================================================================== */
+  const findBar = document.getElementById("find-bar");
+  const findInput = document.getElementById("find-input");
+  const replaceInput = document.getElementById("replace-input");
+  const findCase = document.getElementById("find-case");
+  let findState = null; // { nodes, query, idx, caseSensitive }
+
+  function openFindBar() {
+    if (findBar) {
+      // 顶部浮动：精确贴在工具栏底边下方（工具栏高度随换行/主题变化，按真实位置算）
+      const tb = document.getElementById("toolbar");
+      if (tb) {
+        const top = tb.getBoundingClientRect().bottom + 6;
+        findBar.style.top = top + "px";
+      }
+      findBar.classList.remove("hidden");
+    }
+    if (findInput) findInput.focus();
+  }
+  function closeFindBar() {
+    if (findBar) findBar.classList.add("hidden");
+    const sel = window.getSelection();
+    if (sel) sel.removeAllRanges();
+    findState = null;
+  }
+  function collectTextNodes() {
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, null);
+    const nodes = [];
+    let n;
+    while ((n = walker.nextNode())) {
+      if (n.textContent.length) nodes.push(n);
+    }
+    return nodes;
+  }
+  function doFind(forward) {
+    if (!findInput) return;
+    const q = findInput.value;
+    if (!q) return;
+    const caseSensitive = !!(findCase && findCase.checked);
+    if (!findState || findState.query !== q || findState.caseSensitive !== caseSensitive) {
+      findState = { nodes: collectTextNodes(), query: q, idx: -1, caseSensitive };
+    }
+    const nodes = findState.nodes;
+    if (!nodes.length) { setStatus("未找到：" + q); return; }
+    let start = forward ? findState.idx + 1 : findState.idx - 1;
+    if (start >= nodes.length) start = 0;
+    if (start < 0) start = nodes.length - 1;
+    for (let i = 0; i < nodes.length; i++) {
+      const ni = (start + i) % nodes.length;
+      const node = nodes[ni];
+      const text = caseSensitive ? node.textContent : node.textContent.toLowerCase();
+      const ql = caseSensitive ? q : q.toLowerCase();
+      const pos = text.indexOf(ql);
+      if (pos !== -1) {
+        findState.idx = ni;
+        const range = document.createRange();
+        range.setStart(node, pos);
+        range.setEnd(node, pos + q.length);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        if (node.parentElement && node.parentElement.scrollIntoView) {
+          node.parentElement.scrollIntoView({ block: "nearest" });
+        }
+        setStatus("匹配：" + (ni + 1) + " / " + nodes.length);
+        return;
+      }
+    }
+    setStatus("未找到：" + q);
+  }
+  function replaceCurrent() {
+    if (!findState || findState.idx < 0) {
+      doFind(true);
+      if (!findState || findState.idx < 0) return;
+    }
+    const node = findState.nodes[findState.idx];
+    const q = findState.query;
+    const repl = replaceInput ? replaceInput.value : "";
+    const text = node.textContent;
+    const pos = findState.caseSensitive ? text.indexOf(q) : text.toLowerCase().indexOf(q.toLowerCase());
+    if (pos === -1) return;
+    const before = editor.innerHTML;
+    node.textContent = text.slice(0, pos) + repl + text.slice(pos + q.length);
+    if (editor.innerHTML !== before) commitHistory();
+    lastWasCommand = true;
+    setStatus("已替换 1 处");
+    doFind(true);
+  }
+  function replaceAll() {
+    const q = findInput ? findInput.value : "";
+    if (!q) return;
+    const caseSensitive = !!(findCase && findCase.checked);
+    const repl = replaceInput ? replaceInput.value : "";
+    const nodes = collectTextNodes();
+    let count = 0;
+    const before = editor.innerHTML;
+    nodes.forEach(function (node) {
+      let text = node.textContent;
+      let idx;
+      if (caseSensitive) {
+        while ((idx = text.indexOf(q)) !== -1) {
+          text = text.slice(0, idx) + repl + text.slice(idx + q.length);
+          count++;
+        }
+      } else {
+        const ql = q.toLowerCase();
+        while ((idx = text.toLowerCase().indexOf(ql)) !== -1) {
+          text = text.slice(0, idx) + repl + text.slice(idx + q.length);
+          count++;
+        }
+      }
+      node.textContent = text;
+    });
+    if (editor.innerHTML !== before) commitHistory();
+    lastWasCommand = true;
+    setStatus("已替换 " + count + " 处");
+    findState = null;
+  }
+
+  if (findBar) {
+    document.getElementById("find-next").addEventListener("click", function () { doFind(true); });
+    document.getElementById("find-prev").addEventListener("click", function () { doFind(false); });
+    document.getElementById("find-replace").addEventListener("click", replaceCurrent);
+    document.getElementById("find-replace-all").addEventListener("click", replaceAll);
+    document.getElementById("find-close").addEventListener("click", closeFindBar);
+    if (findInput) findInput.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); doFind(true); }
+    });
+    if (replaceInput) replaceInput.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); replaceCurrent(); }
+    });
+  }
+
   toolbar.addEventListener("click", function (e) {
     const btn = e.target.closest("button");
     if (!btn) return;
-    // 源码视图下仅允许缩放组（含源码切换）操作，禁用其它格式化/插入按钮
-    if (sourceMode && !btn.closest(".source-keep")) return;
+    // 纯源码视图下仅允许 keep 类控件（缩放/分栏/源码），禁用其它格式化/插入按钮
+    if (sourceMode && !btn.classList.contains("keep")) return;
     if (btn.dataset.cmd) {
       formatCommand(btn.dataset.cmd);
     } else if (btn.dataset.block) {
@@ -1058,6 +1584,8 @@
       const action = btn.dataset.action;
       if (action === "link") handleLink();
       else if (action === "image") handleImage();
+      else if (action === "video") handleVideo();
+      else if (action === "find") openFindBar();
       else if (action === "table") insertTable();
       else if (action === "code") insertCodeBlock();
       else if (action === "hr") insertHr();
@@ -1072,6 +1600,7 @@
       else if (action === "zoom-in") zoomIn();
       else if (action === "zoom-out") zoomOut();
       else if (action === "source") toggleSourceMode();
+      else if (action === "split") toggleSplitMode();
       else if (action === "open-folder") openContainingFolder();
       else if (action === "forecolor") { saveSelection(); if (foreColorInput) foreColorInput.click(); }
       else if (action === "backcolor") { saveSelection(); if (backColorInput) backColorInput.click(); }
@@ -1124,6 +1653,49 @@
     recordInput();
     updatePlaceholder();
     scheduleAutosave();
+    if (splitMode) scheduleSyncEditorToSource();
+  });
+
+  /* 源码分栏：左渲染区 → 右源码（防抖写入，避免每键重绘） */
+  let syncToSourceTimer = null;
+  let suppressSourceInput = false;
+  function scheduleSyncEditorToSource() {
+    clearTimeout(syncToSourceTimer);
+    syncToSourceTimer = setTimeout(function () {
+      suppressSourceInput = true;
+      sourceView.value = (currentFile && currentFile.kind === "markdown")
+        ? serializeMarkdown()
+        : editor.innerHTML;
+      setTimeout(function () { suppressSourceInput = false; }, 0);
+    }, 300);
+  }
+
+  /* 源码分栏：右源码 → 左渲染区（防抖应用，方向单向避免回环） */
+  let syncToEditorTimer = null;
+  function scheduleSyncSourceToEditor() {
+    clearTimeout(syncToEditorTimer);
+    syncToEditorTimer = setTimeout(function () {
+      suppressInput = true;
+      const src = sourceView.value;
+      if (currentFile && currentFile.kind === "markdown") {
+        loadMarkdown(src);
+      } else {
+        editor.innerHTML = sanitizeHtmlString(src);
+        history = [takeSnapshot()];
+        historyIndex = 0;
+        lastWasCommand = true;
+        lastChangeTs = Date.now();
+        updatePlaceholder();
+        updateToolbarState();
+      }
+      setTimeout(function () { suppressInput = false; }, 0);
+      scheduleAutosave();
+    }, 300);
+  }
+
+  sourceView.addEventListener("input", function () {
+    if (suppressSourceInput) { suppressSourceInput = false; return; }
+    if (splitMode) scheduleSyncSourceToEditor();
   });
 
   editor.addEventListener("focus", updatePlaceholder);
@@ -1131,7 +1703,28 @@
 
   document.addEventListener("selectionchange", updateToolbarState);
 
+  /** 当前选区是否位于列表项（li）内，用于决定 Tab 是否执行缩进 */
+  function isSelectionInList() {
+    const sel = window.getSelection();
+    if (!sel || !sel.anchorNode) return false;
+    let node =
+      sel.anchorNode.nodeType === Node.TEXT_NODE
+        ? sel.anchorNode.parentElement
+        : sel.anchorNode;
+    while (node && node !== editor) {
+      if (node.tagName === "LI") return true;
+      node = node.parentElement;
+    }
+    return false;
+  }
+
   editor.addEventListener("keydown", function (e) {
+    // 列表内 Tab / Shift+Tab 缩进 / 取消缩进（contenteditable 默认 Tab 会跳焦点）
+    if (e.key === "Tab" && isSelectionInList()) {
+      e.preventDefault();
+      runCommand(e.shiftKey ? "outdent" : "indent");
+      return;
+    }
     const mod = e.ctrlKey || e.metaKey;
     if (!mod) return;
     const key = e.key.toLowerCase();
@@ -1181,7 +1774,11 @@
   /* =====================================================================
    * 初始化：恢复草稿、建立初始历史、注册拖放
    * ===================================================================== */
-  function init() {
+  async function init() {
+    // 先加载同目录配置文件（窗格大小/主题/工具栏布局等），再据其恢复
+    await loadConfig();
+    // 依据配置动态渲染工具栏（顺序 / 显隐由定制弹窗的 ↑/↓ 调整）
+    renderToolbar();
     // 启动不再自动恢复上次草稿内容，避免误以为"已打开文件"；
     // 应用启动即空白新文档（标题显示"未打开文件"）。
     updatePlaceholder();
@@ -1200,11 +1797,15 @@
     // 记住窗口最后尺寸（最小尺寸由 tauri.conf.json 的 minWidth/minHeight 兜底保护）
     setupWindowSizePersistence();
     restoreWindowSize();
+    // 应用上次主题
+    applyTheme(appConfig.theme);
     // 应用上次页面缩放
     try {
       const z = parseFloat(localStorage.getItem("editorZoom"));
       if (!isNaN(z) && z >= 0.5 && z <= 2) applyZoom(z, false);
     } catch (e) {}
+    // 恢复上次源码分栏
+    if (appConfig.sourceSplit) enterSplitMode();
   }
 
   init();

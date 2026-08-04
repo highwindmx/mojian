@@ -1,5 +1,6 @@
 use serde::Serialize;
 use std::fs;
+use std::path::PathBuf;
 
 /// 打开文件返回的结构体
 #[derive(Serialize)]
@@ -24,20 +25,59 @@ pub struct ImageData {
 }
 
 /// 打开本地文件：按后缀路由类型，返回原始文本。
-/// 注意：这里不区分文件是否存在/可读，错误统一以 String 返回给前端处理。
+/// encoding: 可选 "gbk" / "utf-8"；省略时优先 UTF-8，失败后回退 GBK 兜底。
 #[tauri::command]
-pub fn open_file(path: String) -> Result<FileContent, String> {
+pub fn open_file(path: String, encoding: Option<String>) -> Result<FileContent, String> {
     let kind = crate::file_kind::detect_kind(&path)?;
-    let content = fs::read_to_string(&path).map_err(|e| format!("读取文件失败：{}", e))?;
+    let bytes = fs::read(&path).map_err(|e| format!("读取文件失败：{}", e))?;
+    let content = decode_bytes(&bytes, encoding.as_deref())?;
     Ok(FileContent { path, kind, content })
 }
 
-/// 保存文件：content 已是最终要写盘的文本，原样写回指定路径。
-/// kind 仅用于回传，便于前端确认保存类型。
+/// 保存文件：content 已是最终要写盘的文本，原样（按编码）写回指定路径。
+/// encoding: 可选 "gbk" / "utf-8"；省略默认 UTF-8。
 #[tauri::command]
-pub fn save_file(path: String, kind: String, content: String) -> Result<SaveResult, String> {
-    fs::write(&path, content).map_err(|e| format!("写入文件失败：{}", e))?;
+pub fn save_file(
+    path: String,
+    kind: String,
+    content: String,
+    encoding: Option<String>,
+) -> Result<SaveResult, String> {
+    let bytes = encode_string(&content, encoding.as_deref())?;
+    fs::write(&path, bytes).map_err(|e| format!("写入文件失败：{}", e))?;
     Ok(SaveResult { path, kind })
+}
+
+/// 字节按编码解码为字符串
+fn decode_bytes(bytes: &[u8], encoding: Option<&str>) -> Result<String, String> {
+    match encoding.map(|s| s.to_ascii_lowercase()).as_deref() {
+        Some("gbk") | Some("gb2312") => {
+            let (cow, _, _) = encoding_rs::GBK.decode(bytes);
+            Ok(cow.into_owned())
+        }
+        Some("utf-8") | Some("utf8") => {
+            String::from_utf8(bytes.to_vec()).map_err(|e| format!("UTF-8 解码失败：{}", e))
+        }
+        _ => match String::from_utf8(bytes.to_vec()) {
+            Ok(s) => Ok(s),
+            Err(_) => {
+                // 未指定编码时，UTF-8 失败再尝试 GBK（兼容国内老文档）
+                let (cow, _, _) = encoding_rs::GBK.decode(bytes);
+                Ok(cow.into_owned())
+            }
+        },
+    }
+}
+
+/// 字符串按编码编码为字节
+fn encode_string(s: &str, encoding: Option<&str>) -> Result<Vec<u8>, String> {
+    match encoding.map(|e| e.to_ascii_lowercase()).as_deref() {
+        Some("gbk") | Some("gb2312") => {
+            let (cow, _, _) = encoding_rs::GBK.encode(s);
+            Ok(cow.into_owned())
+        }
+        _ => Ok(s.as_bytes().to_vec()),
+    }
 }
 
 /// 读取本地图片并返回 base64（含 MIME），用于编辑器内嵌图片。
@@ -65,8 +105,7 @@ pub fn open_containing_folder(path: String) -> Result<(), String> {
     let status = if cfg!(target_os = "windows") {
         // 注意：explorer 在已有实例运行时会把请求委派给现有实例并以退出码 1 退出，
         // 即便操作实际成功；因此 Windows 下不按退出码判错，只要进程能启动即视为成功。
-        // 采用规范写法 `explorer /select, "路径"`（逗号后空格、路径作为独立参数），
-        // 此前把整条合进一个带引号的参数会因 Rust 对引号转义而破坏命令行，定位到错误位置。
+        // 采用规范写法 `explorer /select, "路径"`（逗号后空格、路径作为独立参数）。
         Command::new("explorer")
             .arg("/select,")
             .arg(&path)
@@ -95,6 +134,30 @@ pub fn open_containing_folder(path: String) -> Result<(), String> {
     }
 }
 
+/// 配置文件的路径：与当前 exe 同目录下的 mojian.config.json
+fn config_path() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    Some(dir.join("mojian.config.json"))
+}
+
+/// 读取配置（JSON 文本）。文件不存在时返回空对象 "{}"。
+#[tauri::command]
+pub fn read_config() -> Result<String, String> {
+    let path = config_path().ok_or_else(|| "无法确定配置路径".to_string())?;
+    if !path.exists() {
+        return Ok(String::from("{}"));
+    }
+    fs::read_to_string(&path).map_err(|e| format!("读取配置失败：{}", e))
+}
+
+/// 写入配置（JSON 文本）。
+#[tauri::command]
+pub fn write_config(content: String) -> Result<(), String> {
+    let path = config_path().ok_or_else(|| "无法确定配置路径".to_string())?;
+    fs::write(&path, content).map_err(|e| format!("写入配置失败：{}", e))
+}
+
 /// 根据后缀推断图片 MIME（不依赖外部 crate，覆盖常见类型）。
 fn infer_mime(path: &str) -> String {
     let lower = path.to_lowercase();
@@ -108,6 +171,16 @@ fn infer_mime(path: &str) -> String {
         "image/webp".to_string()
     } else if lower.ends_with(".bmp") {
         "image/bmp".to_string()
+    } else if lower.ends_with(".mp4") {
+        "video/mp4".to_string()
+    } else if lower.ends_with(".webm") {
+        "video/webm".to_string()
+    } else if lower.ends_with(".ogg") || lower.ends_with(".ogv") {
+        "video/ogg".to_string()
+    } else if lower.ends_with(".mov") {
+        "video/quicktime".to_string()
+    } else if lower.ends_with(".avi") {
+        "video/x-msvideo".to_string()
     } else {
         "application/octet-stream".to_string()
     }
