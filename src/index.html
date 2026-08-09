@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>墨笺</title>
 <link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="vendor/reveal/reveal.css">
+<link rel="stylesheet" href="vendor/reveal/theme/white.css" id="reveal-theme">
 </head>
 <body>
   <!-- ============================ 顶部应用栏 ============================ -->
@@ -41,6 +43,9 @@
 
   <!-- ============================ 工具栏（由 app.js 依据配置动态渲染） ============================ -->
   <div class="toolbar" id="toolbar"><!-- 按钮 / 分组由 app.js 动态生成 --></div>
+
+  <!-- ============================ PDF 工具栏（由 pdf.js 依据配置动态渲染，支持顶部「定制」） ============================ -->
+  <div class="toolbar pdf-toolbar hidden" id="pdf-toolbar"><!-- 按钮 / 分组由 pdf.js 动态生成 --></div>
 
   <!-- ============================ 编辑区 ============================ -->
   <div class="editor-wrap" id="editor-wrap">
@@ -138,9 +143,222 @@
   <input type="color" id="fore-color-input" value="#e11d48" aria-hidden="true" style="position:absolute;width:0;height:0;opacity:0;pointer-events:none;border:0;padding:0;">
   <input type="color" id="back-color-input" value="#fde68a" aria-hidden="true" style="position:absolute;width:0;height:0;opacity:0;pointer-events:none;border:0;padding:0;">
 
-  <!-- vendor 库（marked / turndown）离线自包含，须在 app.js 之前加载 -->
+  <!-- ============================ PDF 阅读 / 工具区（默认隐藏，打开 PDF 时显示） ============================ -->
+  <div class="pdf-root hidden" id="pdf-root">
+    <!-- 加载遮罩（打开大文件时显示，避免假死观感） -->
+    <div class="pdf-loading hidden" id="pdf-loading">
+      <div class="pdf-loading-box">
+        <div class="spinner"></div>
+        <div id="pdf-loading-text">正在加载 PDF…</div>
+      </div>
+    </div>
+    <!-- 主体：侧栏 + 拖拽条 + 页面 -->
+    <div class="pdf-body">
+      <div class="pdf-sidebar" id="pdf-sidebar">
+        <div class="pdf-sidebar-tabs">
+          <button data-pdf-tab="thumbs" class="active" title="页面缩略图">缩略图</button>
+          <button data-pdf-tab="outline" title="文档大纲 / 书签">大纲</button>
+        </div>
+        <div class="pdf-thumbs" id="pdf-thumbs"></div>
+        <div class="pdf-outline hidden" id="pdf-outline"></div>
+      </div>
+      <!-- 侧栏宽度拖拽条（双击恢复默认宽度） -->
+      <div class="pdf-sidebar-resizer" id="pdf-sidebar-resizer" title="拖动调整侧栏宽度（双击恢复默认）"></div>
+      <div class="pdf-main" id="pdf-main">
+        <div class="pdf-pages" id="pdf-pages"><!-- 每页 .pdf-page(canvas + textLayer + 备注overlay) 由 pdf.js 动态生成 --></div>
+      </div>
+    </div>
+    <!-- PDF 置底状态栏（低于页面：消息 + 页码 + 上一页/下一页） -->
+    <div class="pdf-status-bar hidden" id="pdf-status-bar">
+      <div class="pdf-sb-left" id="pdf-sb-left"></div>
+      <div class="pdf-sb-center" id="pdf-sb-center">
+        <button class="pdf-sb-nav" id="pdf-prev" title="上一页">‹</button>
+        <input type="number" id="pdf-page-jump" min="1" title="输入页码后回车跳转">
+        <span class="pdf-sb-sep">/</span>
+        <span id="pdf-page-info">— / —</span>
+        <button class="pdf-sb-nav" id="pdf-next" title="下一页">›</button>
+      </div>
+      <div class="pdf-sb-right" id="pdf-sb-right"></div>
+    </div>
+    <!-- 选中文字批注浮条 -->
+    <div class="anno-bar hidden" id="anno-bar">
+      <button data-anno="highlight" title="高亮选中文字">高亮</button>
+      <button data-anno="underline" title="给选中文字加下划线">划线</button>
+      <button data-anno="note" title="为选中区域添加气泡备注">气泡</button>
+    </div>
+    <!-- PDF 查找浮条 -->
+    <div class="find-bar hidden" id="pdf-find-bar">
+      <input type="text" id="pdf-find-input" placeholder="在 PDF 中查找" autocomplete="off">
+      <button id="pdf-find-prev" title="上一个">↑</button>
+      <button id="pdf-find-next" title="下一个">↓</button>
+      <span id="pdf-find-count" class="pdf-find-count"></span>
+      <button id="pdf-find-close" title="关闭">✕</button>
+    </div>
+  </div>
+
+  <!-- ============================ 备注输入弹窗 ============================ -->
+  <div class="modal hidden" id="pdf-note-dialog">
+    <div class="modal-card">
+      <h3>添加备注</h3>
+      <label for="pdf-note-text">备注内容（将作为便签注释写入 PDF）</label>
+      <textarea id="pdf-note-text" rows="4" placeholder="输入备注…" style="width:100%;resize:vertical;"></textarea>
+      <div class="modal-actions">
+        <button data-close>取消</button>
+        <button class="primary" id="pdf-note-ok">添加</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ 拆分 PDF 弹窗 ============================ -->
+  <div class="modal hidden" id="pdf-split-dialog">
+    <div class="modal-card">
+      <h3>拆分 PDF</h3>
+      <p class="modal-desc">基于当前打开的 PDF 拆分：</p>
+      <label><input type="radio" name="pdf-split-mode" value="each" checked> 每页拆成单独文件</label>
+      <label><input type="radio" name="pdf-split-mode" value="range"> 按页码区间拆分</label>
+      <input type="text" id="pdf-split-range" placeholder="区间，如 1-3,5,7-9" style="width:100%;margin-top:6px;">
+      <p class="modal-desc" style="margin-top:8px;">拆分结果将保存到原文件所在目录（文件名_第N页.pdf）。</p>
+      <div class="modal-actions">
+        <button data-close>取消</button>
+        <button class="primary" id="pdf-split-ok">开始拆分</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ 旋转 PDF 弹窗 ============================ -->
+  <div class="modal hidden" id="pdf-rotate-dialog">
+    <div class="modal-card">
+      <h3>旋转页面</h3>
+      <p class="modal-desc">指定要旋转的页码（留空 = 全部页面），并选择方向。</p>
+      <label for="pdf-rotate-range">页码范围（如 1-3,5,7-9）</label>
+      <input type="text" id="pdf-rotate-range" placeholder="留空 = 全部页面" autocomplete="off" style="width:100%;">
+      <div style="margin-top:10px;display:flex;gap:18px;">
+        <label><input type="radio" name="pdf-rotate-dir" value="1" checked> 顺时针 90°</label>
+        <label><input type="radio" name="pdf-rotate-dir" value="-1"> 逆时针 90°</label>
+      </div>
+      <div class="modal-actions">
+        <button data-close>取消</button>
+        <button class="primary" id="pdf-rotate-ok">旋转</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ 表情选择弹窗（HTML / Markdown 工具栏） ============================ -->
+  <div class="modal hidden" id="emoji-dialog">
+    <div class="modal-card emoji-card">
+      <h3>插入表情</h3>
+      <input type="text" id="emoji-search" placeholder="搜索表情…" autocomplete="off">
+      <div class="emoji-grid" id="emoji-grid"></div>
+      <div class="modal-actions">
+        <button data-close>关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ PDF 导出图片弹窗 ============================ -->
+  <div class="modal hidden" id="pdf-export-img-dialog">
+    <div class="modal-card">
+      <h3>导出为图片</h3>
+      <label for="pdf-img-format">格式</label>
+      <select id="pdf-img-format">
+        <option value="png">PNG（无损）</option>
+        <option value="jpeg">JPEG（更小）</option>
+      </select>
+      <label for="pdf-img-range">页码区间（留空=全部，如 1-3,5）</label>
+      <input type="text" id="pdf-img-range" placeholder="1-3,5" autocomplete="off">
+      <label for="pdf-img-scale">清晰度（渲染缩放 1~4，越大越清晰越大）</label>
+      <input type="number" id="pdf-img-scale" value="2" min="1" max="4" step="0.5">
+      <label for="pdf-img-dir">导出目录（留空=原 PDF 所在目录）</label>
+      <div class="path-pick-row">
+        <input type="text" id="pdf-img-dir" placeholder="选择导出目录…" autocomplete="off">
+        <button type="button" id="pdf-img-dir-pick">浏览…</button>
+      </div>
+      <div class="modal-actions">
+        <button data-close>取消</button>
+        <button class="primary" id="pdf-export-img-ok">导出</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ PDF 转 Word 弹窗 ============================ -->
+  <div class="modal hidden" id="pdf-export-word-dialog">
+    <div class="modal-card">
+      <h3>转为 Word（文本版）</h3>
+      <p class="modal-desc">抽取文字重排为可编辑 .doc；图片处标 [图片]、表格处标 [表格] 占位，不实际提取图/表内容。</p>
+      <label for="pdf-word-range">页码区间（留空=全部，如 1-3,5）</label>
+      <input type="text" id="pdf-word-range" placeholder="1-3,5" autocomplete="off">
+      <p class="modal-desc">点「转换」后会弹出系统保存对话框，可自由选择保存目录与文件名。</p>
+      <div class="modal-actions">
+        <button data-close>取消</button>
+        <button class="primary" id="pdf-export-word-ok">转换</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ 文字水印弹窗 ============================ -->
+  <div class="modal hidden" id="pdf-watermark-dialog">
+    <div class="modal-card">
+      <h3>文字水印</h3>
+      <label for="pdf-wm-text">水印文字</label>
+      <input type="text" id="pdf-wm-text" value="机密" placeholder="如水印文字" autocomplete="off">
+      <label for="pdf-wm-size">字号</label>
+      <input type="number" id="pdf-wm-size" value="48" min="8" max="200">
+      <label for="pdf-wm-opacity">不透明度（0.02~1）</label>
+      <input type="number" id="pdf-wm-opacity" value="0.25" min="0.02" max="1" step="0.01">
+      <label for="pdf-wm-color">颜色</label>
+      <input type="color" id="pdf-wm-color" value="#888888">
+      <label class="checkbox"><input type="checkbox" id="pdf-wm-diagonal" checked> 对角平铺（取消则横向平铺）</label>
+      <p class="modal-desc">「应用」只改当前视图、不写盘；是否落盘由你决定（工具栏「保存」/「另存为」），不满意可点「撤回」。</p>
+      <div class="modal-actions">
+        <button data-close>取消</button>
+        <button class="primary" id="pdf-wm-ok">应用</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ 签章弹窗 ============================ -->
+  <div class="modal hidden" id="pdf-signature-dialog">
+    <div class="modal-card">
+      <h3>插入签章</h3>
+      <p class="modal-desc">方式一：加载一张 PNG 印章 / 签名图；方式二：在下方手绘。确认后点击 PDF 页面放置。</p>
+      <button type="button" id="pdf-sign-load">选择 PNG / JPEG 图片…</button>
+      <input type="file" id="pdf-sign-file" accept="image/png,image/jpeg" style="display:none">
+      <div class="sign-pad-wrap">
+        <canvas id="pdf-sign-pad" width="320" height="140"></canvas>
+      </div>
+      <div class="modal-actions">
+        <button id="pdf-sign-clear">清除手绘</button>
+        <button data-close>取消</button>
+        <button class="primary" id="pdf-sign-ok">用于放置</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ Markdown 幻灯片演示 overlay（默认隐藏） ============================ -->
+  <div class="reveal-overlay hidden" id="slides-overlay">
+    <div class="reveal" id="slides-reveal">
+      <div class="slides" id="slides-container"><!-- 每页 <section> 由 app.js 动态生成 --></div>
+    </div>
+    <div class="slides-bar">
+      <button id="slides-prev" title="上一页 (←)">‹</button>
+      <span id="slides-indicator">— / —</span>
+      <button id="slides-next" title="下一页 (→)">›</button>
+      <span class="divider"></span>
+      <button id="slides-export" title="导出为独立的自包含 HTML 文件">导出</button>
+      <button id="slides-close" class="primary" title="退出演示 (Esc)">✕ 退出</button>
+    </div>
+  </div>
+
+  <!-- vendor 库：pdf.js（查看渲染）/ pdf-lib（旋转·合并·拆分·备注写入），离线自包含 -->
+  <script src="vendor/pdfjs/pdf.min.js"></script>
+  <script src="vendor/pdf-lib/pdf-lib.min.js"></script>
+  <!-- 编辑器依赖（marked / turndown），须在 app.js 之前加载 -->
   <script src="vendor/marked.min.js"></script>
   <script src="vendor/turndown.js"></script>
+  <!-- PDF 模块（须先于 app.js，使 window.PDFApp 在启动时可用） -->
+  <script src="pdf.js"></script>
+  <!-- 幻灯片演示引擎（reveal.js，UMD 全局 Reveal；仅 presentSlides 时用到） -->
+  <script src="vendor/reveal/reveal.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

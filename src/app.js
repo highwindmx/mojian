@@ -43,6 +43,7 @@
     windowSize: null,      // { w, h } 物理像素；关闭前的窗格大小
     theme: "light",        // light | sepia(豆沙绿) | yellow(养眼黄) | dark
     toolbar: null,         // 工具栏自定义布局（按钮顺序/显隐），null=使用默认
+    pdfToolbar: null,      // PDF 工具栏自定义布局（同上），null=使用默认
     defaultEncoding: "",   // ""=自动(UTF-8 优先, GBK 兜底) | "utf-8" | "gbk"
     sourceSplit: false,    // 源码分栏模式（左渲染右源码）
     toolbarVisible: true,
@@ -87,6 +88,8 @@
     table:      { name:"表格", kind:"action", value:"table", title:"插入表格 (3×3)", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="1.5"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/></svg>' },
     code:       { name:"代码块", kind:"action", value:"code", title:"插入代码块", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 7 4 12 8 17"/><polyline points="16 7 20 12 16 17"/></svg>' },
     hr:         { name:"分割线", kind:"action", value:"hr", title:"插入分割线", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="12" x2="20" y2="12"/></svg>' },
+    emoji:      { name:"表情", kind:"action", value:"emoji", title:"插入表情（Emoji）", label:'😀' },
+    slides:     { name:"幻灯片", kind:"action", value:"slides", title:"以幻灯片演示（仅 Markdown 文档）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><circle cx="12" cy="16" r="1.5" fill="currentColor" stroke="none"/></svg>' },
     find:       { name:"查找替换", kind:"action", value:"find", title:"查找 / 替换", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>' },
     zoomout:    { name:"缩小", kind:"action", value:"zoom-out", title:"缩小 (Ctrl+-)", label:'−', keep:true },
     zoomin:     { name:"放大", kind:"action", value:"zoom-in", title:"放大 (Ctrl+=)", label:'+', keep:true },
@@ -96,7 +99,7 @@
   };
 
   const DEFAULT_ORDER = [
-    "new","open","save","saveas","export","clear",
+    "new","open","save","saveas","export","slides","clear",
     "__divider__",
     "undo","redo",
     "__divider__",
@@ -106,7 +109,7 @@
     "__divider__",
     "insertUnorderedList","insertOrderedList","indent","outdent","BLOCKQUOTE","link",
     "__divider__",
-    "image","video","table","code","hr",
+    "image","video","table","code","hr","emoji",
     "__divider__",
     "find",
     "__divider__",
@@ -249,7 +252,16 @@
     saveConfig({ toolbar: appConfig.toolbar });
     openToolbarSettings(); // 重渲染列表以刷新按钮可用状态
   }
-  if (toolbarSettingsBtn) toolbarSettingsBtn.addEventListener("click", openToolbarSettings);
+  /* PDF 打开时，顶部「定制」改为定制 PDF 工具栏（复用同一个弹窗） */
+  function pdfCustomizeActive() {
+    return !!(window.__pdfActive && window.PDFApp && window.PDFApp.openToolbarSettings);
+  }
+  if (toolbarSettingsBtn) toolbarSettingsBtn.addEventListener("click", function () {
+    if (pdfCustomizeActive()) { window.PDFApp.openToolbarSettings(); return; }
+    const title = toolbarSettingsModal && toolbarSettingsModal.querySelector("h3");
+    if (title) title.textContent = "自定义工具栏";
+    openToolbarSettings();
+  });
   if (toolbarSettingsModal) {
     const ok = document.getElementById("toolbar-settings-ok");
     const reset = document.getElementById("toolbar-reset");
@@ -257,11 +269,18 @@
       if (toolbarSettingsModal) closeModal(toolbarSettingsModal);
     });
     if (reset) reset.addEventListener("click", function () {
+      if (pdfCustomizeActive() && window.PDFApp.resetToolbar) { window.PDFApp.resetToolbar(); return; }
       appConfig.toolbar = null;
       renderToolbar();
       saveConfig({ toolbar: null });
     });
   }
+
+  /* 配置桥：供 pdf.js 读写同一份 mojian.config.json（避免两边各写一份互相覆盖） */
+  window.MojianConfig = {
+    get: function () { return appConfig; },
+    save: function (patch) { return saveConfig(patch); },
+  };
 
   async function loadConfig() {
     try {
@@ -837,6 +856,108 @@
   function insertHr() { insertHTML("<hr>"); }
 
   /* =====================================================================
+   * 表情输入（HTML / Markdown 工具栏）
+   * ===================================================================== */
+  const EMOJIS = [
+    { e: "😀", k: "smile grin happy 笑" }, { e: "😁", k: "grin 大笑" }, { e: "😂", k: "joy lol 笑哭" },
+    { e: "🤣", k: "rofl 笑翻" }, { e: "😊", k: "blush smile 微笑" }, { e: "😍", k: "heart eyes 爱" },
+    { e: "😘", k: "kiss 飞吻" }, { e: "😎", k: "cool sunglasses 酷" }, { e: "🤔", k: "think 思考" },
+    { e: "😅", k: "sweat 尴尬" }, { e: "😉", k: "wink 眨眼" }, { e: "🙂", k: "slight smile" },
+    { e: "🙃", k: "upside down 倒脸" }, { e: "😴", k: "sleep 睡" }, { e: "😇", k: "angel 天使" },
+    { e: "🥳", k: "party 庆祝" }, { e: "😢", k: "cry 哭" }, { e: "😭", k: "sob 大哭" },
+    { e: "😡", k: "angry 生气" }, { e: "🤯", k: "mind blown 震惊" }, { e: "😱", k: "scream 尖叫" },
+    { e: "🤗", k: "hug 拥抱" }, { e: "🤝", k: "handshake 握手" }, { e: "👍", k: "thumbs up 赞 好" },
+    { e: "👎", k: "thumbs down 踩" }, { e: "👏", k: "clap 鼓掌" }, { e: "🙌", k: "raised hands 欢呼" },
+    { e: "💪", k: "muscle 加油 强" }, { e: "🙏", k: "pray 拜托 谢谢" }, { e: "👌", k: "ok 好" },
+    { e: "✌️", k: "victory peace 耶" }, { e: "🤞", k: "fingers crossed 好运" }, { e: "👋", k: "wave 你好 拜拜" },
+    { e: "❤️", k: "heart 红心 爱" }, { e: "🧡", k: "orange heart" }, { e: "💛", k: "yellow heart" },
+    { e: "💚", k: "green heart" }, { e: "💙", k: "blue heart" }, { e: "💜", k: "purple heart" },
+    { e: "🖤", k: "black heart" }, { e: "💔", k: "broken heart" }, { e: "💯", k: "hundred 满分" },
+    { e: "⭐", k: "star 星" }, { e: "🌟", k: "glowing star" }, { e: "✨", k: "sparkles 闪" },
+    { e: "🔥", k: "fire 火 热" }, { e: "🌈", k: "rainbow 彩虹" }, { e: "☀️", k: "sun 太阳" },
+    { e: "🌙", k: "moon 月亮" }, { e: "⚡", k: "lightning 闪电" }, { e: "❄️", k: "snow 雪" },
+    { e: "🌸", k: "blossom 花" }, { e: "🌹", k: "rose 玫瑰" }, { e: "🍀", k: "clover 幸运" },
+    { e: "🎉", k: "tada 庆祝" }, { e: "🎊", k: "confetti 庆祝" }, { e: "🎁", k: "gift 礼物" },
+    { e: "🏆", k: "trophy 奖杯" }, { e: "💡", k: "bulb 想法 提示" }, { e: "📌", k: "pin 钉" },
+    { e: "✅", k: "check 完成 对" }, { e: "❌", k: "cross 错 否" }, { e: "⚠️", k: "warning 警告" },
+    { e: "❓", k: "question 问" }, { e: "❗", k: "exclamation 感叹" }, { e: "💬", k: "speech 评论" },
+    { e: "📝", k: "memo 笔记 写" }, { e: "📌", k: "pushpin 标记" }, { e: "🔔", k: "bell 通知" },
+    { e: "💰", k: "money 钱" }, { e: "💡", k: "idea 想法" }, { e: "🚀", k: "rocket 火箭 快" },
+    { e: "⏰", k: "alarm 闹钟 时间" }, { e: "📅", k: "calendar 日历" }, { e: "🔍", k: "search 搜索" },
+    { e: "💻", k: "laptop 电脑" }, { e: "📱", k: "phone 手机" }, { e: "📖", k: "book 书 读" },
+    { e: "🍎", k: "apple 苹果" }, { e: "☕", k: "coffee 咖啡" }, { e: "🍺", k: "beer 啤酒" },
+    { e: "🏠", k: "home 家" }, { e: "🌍", k: "earth 地球 全球" }, { e: "👀", k: "eyes 看" },
+    { e: "🐱", k: "cat 猫" }, { e: "🐶", k: "dog 狗" }, { e: "🐰", k: "rabbit 兔" }, { e: "🐼", k: "panda 熊猫" },
+  ];
+  const emojiDialog = document.getElementById("emoji-dialog");
+
+  function openEmojiDialog() {
+    const grid = document.getElementById("emoji-grid");
+    if (grid && !grid.dataset.built) { buildEmojiGrid(grid); grid.dataset.built = "1"; }
+    if (emojiDialog) openModal(emojiDialog);
+    const search = document.getElementById("emoji-search");
+    if (search) { search.value = ""; filterEmoji(""); search.focus(); }
+  }
+  function buildEmojiGrid(grid) {
+    EMOJIS.forEach(function (item) {
+      const s = document.createElement("button");
+      s.type = "button";
+      s.className = "emoji-cell";
+      s.textContent = item.e;
+      s.dataset.k = item.k;
+      s.title = item.k;
+      s.addEventListener("click", function () {
+        insertEmoji(item.e);
+        if (emojiDialog) closeModal(emojiDialog);
+      });
+      grid.appendChild(s);
+    });
+  }
+  function filterEmoji(q) {
+    const grid = document.getElementById("emoji-grid");
+    if (!grid) return;
+    q = (q || "").trim().toLowerCase();
+    grid.querySelectorAll(".emoji-cell").forEach(function (c) {
+      const hit = !q || (c.dataset.k || "").toLowerCase().indexOf(q) >= 0 || c.textContent.indexOf(q) >= 0;
+      c.style.display = hit ? "" : "none";
+    });
+  }
+  function insertEmoji(ch) {
+    if (sourceMode) insertAtCaretSource(ch);
+    else insertAtCaretEditor(ch);
+  }
+  function insertAtCaretEditor(text) {
+    editor.focus();
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && editor.contains(sel.anchorNode)) {
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      const node = document.createTextNode(text);
+      range.insertNode(node);
+      range.setStartAfter(node);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } else {
+      document.execCommand("insertText", false, text);
+    }
+    commitHistory();
+    updatePlaceholder();
+    scheduleAutosave();
+  }
+  function insertAtCaretSource(text) {
+    const s = sourceView.selectionStart || 0;
+    const e = sourceView.selectionEnd || 0;
+    const v = sourceView.value;
+    sourceView.value = v.slice(0, s) + text + v.slice(e);
+    const pos = s + text.length;
+    sourceView.selectionStart = sourceView.selectionEnd = pos;
+    scheduleAutosave();
+  }
+  const emojiSearch = document.getElementById("emoji-search");
+  if (emojiSearch) emojiSearch.addEventListener("input", function () { filterEmoji(emojiSearch.value); });
+
+  /* =====================================================================
    * 导出与自动保存
    * ===================================================================== */
   function buildExportDocument() {
@@ -900,6 +1021,143 @@
     }
   }
 
+  /* =====================================================================
+   * Markdown 幻灯片演示（reveal.js，离线 vendored）
+   *  - 仅对 Markdown 文档可用；按「独自成行的 ---」切分幻灯片
+   *  - 每页用已 vendored 的 marked 预渲染（与编辑器预览一致），再交给 reveal 播放
+   *  - 非破坏性：Esc / 退出按钮返回编辑器，不改源文件
+   * ===================================================================== */
+  const slidesOverlay = document.getElementById("slides-overlay");
+  const slidesContainer = document.getElementById("slides-container");
+  let slidesReady = false;
+  let lastSlideMarkdown = "";
+
+  function splitSlides(md) {
+    const lines = md.split(/\r?\n/);
+    const chunks = [];
+    let cur = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (/^\s*---\s*$/.test(lines[i])) { chunks.push(cur.join("\n")); cur = []; }
+      else cur.push(lines[i]);
+    }
+    chunks.push(cur.join("\n"));
+    const nonEmpty = chunks.filter(function (c) { return c.trim().length; });
+    return nonEmpty.length ? nonEmpty : chunks;
+  }
+
+  function buildSlideSections(md) {
+    if (!slidesContainer) return;
+    const slides = splitSlides(md);
+    slidesContainer.innerHTML = "";
+    slides.forEach(function (chunk) {
+      const section = document.createElement("section");
+      try { section.innerHTML = window.marked ? window.marked(chunk) : chunk; }
+      catch (e) { section.textContent = chunk; }
+      slidesContainer.appendChild(section);
+    });
+    lastSlideMarkdown = md;
+  }
+
+  function updateSlideIndicator() {
+    const ind = document.getElementById("slides-indicator");
+    if (!ind || !window.Reveal) return;
+    const idx = window.Reveal.getIndices ? window.Reveal.getIndices() : { h: 0 };
+    const total = window.Reveal.getTotalSlides ? window.Reveal.getTotalSlides() : 1;
+    ind.textContent = (idx.h + 1) + " / " + total;
+  }
+
+  async function presentSlides() {
+    if (!currentFile || currentFile.kind !== "markdown") {
+      showToast("幻灯片演示仅适用于 Markdown 文档", true);
+      return;
+    }
+    const md = serializeMarkdown();
+    if (!md || !md.trim()) { showToast("当前文档没有可演示的内容", true); return; }
+    buildSlideSections(md);
+    if (slidesOverlay) slidesOverlay.classList.remove("hidden");
+    if (!window.Reveal) { showToast("演示组件未能加载（reveal.js 缺失）", true); return; }
+    if (!slidesReady) {
+      slidesReady = true;
+      requestAnimationFrame(function () {
+        const r = window.Reveal;
+        r.initialize({
+          hash: false, controls: true, progress: true,
+          slideNumber: "c/t", center: true, transition: "slide",
+          keyboard: true,
+        });
+        r.on("slidechanged", updateSlideIndicator);
+        r.on("ready", updateSlideIndicator);
+        updateSlideIndicator();
+      });
+    } else {
+      window.Reveal.sync();
+      window.Reveal.slide(0, 0);
+      updateSlideIndicator();
+    }
+  }
+
+  function closeSlides() {
+    if (slidesOverlay) slidesOverlay.classList.add("hidden");
+  }
+
+  async function exportSlides() {
+    if (!currentFile || currentFile.kind !== "markdown") {
+      showToast("导出幻灯片仅适用于 Markdown 文档", true);
+      return;
+    }
+    const md = lastSlideMarkdown || serializeMarkdown();
+    const slides = splitSlides(md);
+    let sectionsHtml = "";
+    slides.forEach(function (chunk) {
+      let html;
+      try { html = window.marked ? window.marked(chunk) : chunk; }
+      catch (e) { html = "<pre>" + chunk.replace(/&/g, "&amp;") + "</pre>"; }
+      sectionsHtml += "<section>" + html + "</section>\n";
+    });
+    let revealCss = "", themeCss = "", revealJs = "";
+    try {
+      revealCss = await (await fetch("vendor/reveal/reveal.css")).text();
+      themeCss = await (await fetch("vendor/reveal/theme/white.css")).text();
+      revealJs = await (await fetch("vendor/reveal/reveal.js")).text();
+    } catch (e) { /* 退化：保留相对引用，用户在原程序目录打开仍可用 */ }
+    const title = (currentFile && currentFile.path) ? currentFile.path.split(/[\\/]/).pop() : "slides";
+    const doc =
+      '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8">\n' +
+      "<title>" + title + " - 幻灯片</title>\n" +
+      "<style>\n" + revealCss + "\n" + themeCss + "\n" +
+      ".reveal .slides section{text-align:left}\n" +
+      "</style>\n</head>\n<body>\n" +
+      '<div class="reveal"><div class="slides">\n' + sectionsHtml + "</div></div>\n" +
+      "<script>" + revealJs + "<\/script>\n" +
+      '<script>Reveal.initialize({slideNumber:"c/t",center:true,transition:"slide",controls:true,progress:true});<\/script>\n' +
+      "</body>\n</html>";
+    let path;
+    try {
+      path = await tauriSave({ filters: [{ name: "HTML 幻灯片", extensions: ["html"] }] });
+    } catch (e) { showToast("已取消导出", false); return; }
+    if (!path) return;
+    try {
+      await tauriInvoke("save_file", { path: path, kind: "html", content: doc });
+      showToast("已导出幻灯片：" + path);
+    } catch (e) { showToast("导出失败：" + e, true); }
+  }
+
+  // 演示态按钮绑定（一次性）
+  const slidesPrev = document.getElementById("slides-prev");
+  const slidesNext = document.getElementById("slides-next");
+  const slidesClose = document.getElementById("slides-close");
+  const slidesExport = document.getElementById("slides-export");
+  if (slidesPrev) slidesPrev.addEventListener("click", function () { if (window.Reveal) window.Reveal.prev(); });
+  if (slidesNext) slidesNext.addEventListener("click", function () { if (window.Reveal) window.Reveal.next(); });
+  if (slidesClose) slidesClose.addEventListener("click", closeSlides);
+  if (slidesExport) slidesExport.addEventListener("click", exportSlides);
+  // Esc 退出演示（捕获阶段拦截，避免 reveal 抢占）
+  document.addEventListener("keydown", function (e) {
+    if (slidesOverlay && !slidesOverlay.classList.contains("hidden") && e.key === "Escape") {
+      e.preventDefault(); e.stopPropagation(); closeSlides();
+    }
+  }, true);
+
   async function clearDraft() {
     const ok = await uiConfirm("确定要清空当前内容吗？此操作不可撤销。");
     if (!ok) return;
@@ -934,6 +1192,34 @@
       el.classList.toggle("status-error", !!isError);
     }
     if (msg) showToast(msg, isError);
+  }
+
+  /* 主程序（HTML/Markdown 编辑器）状态栏：字数 / 词数 / 编码 / 光标位置。
+   * 直接写 #status（不走 setStatus，避免每次输入都弹 Toast）。
+   * PDF 模式下由 pdf.js 接管状态栏，这里直接返回。 */
+  let statusTimer = null;
+  function updateEditorStatus() {
+    if (window.__pdfActive) return;
+    const el = document.getElementById("status");
+    if (!el) return;
+    const enc = (encodingSelect && encodingSelect.value) || "自动";
+    const text = editor && editor.innerText ? editor.innerText : "";
+    const chars = text.replace(/\s/g, "").length;
+    const cjk = (text.match(/[一-鿿]/g) || []).length;
+    const en = (text.match(/[A-Za-z0-9]+/g) || []).length;
+    let pos = "";
+    try {
+      const sel = window.getSelection();
+      if (sel && sel.anchorNode && editor.contains(sel.anchorNode) && typeof getCaretOffset === "function") {
+        pos = "　光标 " + (getCaretOffset() + 1);
+      }
+    } catch (e) {}
+    el.textContent = "字数 " + chars + "　词数 " + (cjk + en) + "　编码 " + (enc || "自动") + pos;
+    el.classList.remove("status-error");
+  }
+  function scheduleStatus() {
+    if (statusTimer) clearTimeout(statusTimer);
+    statusTimer = setTimeout(updateEditorStatus, 150);
   }
 
   /* 顶部 Toast 提示：显示后自动隐藏，可点击关闭 */
@@ -1126,7 +1412,7 @@
     try {
       selected = await tauriOpen({
         multiple: false,
-        filters: [{ name: "HTML / Markdown", extensions: ["html", "htm", "md", "markdown"] }],
+        filters: [{ name: "HTML / Markdown / PDF", extensions: ["html", "htm", "md", "markdown", "pdf"] }],
       });
     } catch (e) {
       setStatus("打开失败：" + e, true);
@@ -1139,6 +1425,14 @@
   /** 按路径打开文件（供对话框与拖放共用） */
   async function openFileWithPath(path) {
     if (!TAURI) { setStatus("当前环境不支持文件读取。", true); return; }
+    // PDF：交给 PDF 模块（查看 / 旋转 / 备注 / 合并 / 拆分），不走文本编辑器
+    const lower = path.toLowerCase();
+    if (lower.endsWith(".pdf")) {
+      if (window.PDFApp) window.PDFApp.open(path);
+      return;
+    }
+    // 打开其它文档前，若正处于 PDF 模式则先退出
+    if (window.__pdfActive && window.PDFApp) window.PDFApp.close();
     let res;
     try {
       const enc = (getConfig().defaultEncoding || "") || undefined;
@@ -1178,6 +1472,8 @@
 
   /** 保存：有打开的文件则写回，否则走"另存为" */
   async function saveFile() {
+    // PDF 模式下，保存走 PDF 模块（写回旋转 / 备注）
+    if (window.__pdfActive && window.PDFApp) { window.PDFApp.save(); return; }
     if (sourceMode) applySourceToEditor();
     if (currentFile) {
       await saveFileWithContent(currentFile.path, currentFile.kind);
@@ -1188,6 +1484,8 @@
 
   /** 另存为：弹出保存对话框，按后缀决定类型 */
   async function saveFileAs() {
+    // PDF 模式下，另存为走 PDF 模块（把旋转/备注/水印/签章一并烤进新文件）
+    if (window.__pdfActive && window.PDFApp && window.PDFApp.saveAs) { window.PDFApp.saveAs(); return; }
     if (!TAURI) { setStatus("当前环境不支持保存对话框。", true); return; }
     let path;
     try {
@@ -1204,6 +1502,12 @@
     if (!path) return;
     const kind = detectKindFromPath(path);
     currentFile = { path, kind };
+    // 同步首屏路径指示与"打开位置"按钮（否则另存为之后仍显示"未打开文件"且按钮灰掉）
+    setFilePath(path, true);
+    try {
+      const name = path.split(/[\\/]/).pop() || path;
+      document.title = name + " · 墨笺";
+    } catch (e) {}
     await saveFileWithContent(path, kind);
   }
 
@@ -1386,12 +1690,13 @@
   }
 
   async function openContainingFolder() {
-    if (!currentFile || !currentFile.path) {
+    const path = (currentFile && currentFile.path) || (window.__pdfPath) || null;
+    if (!path) {
       setStatus("请先打开一个文件再定位。", true);
       return;
     }
     try {
-      await tauriInvoke("open_containing_folder", { path: currentFile.path });
+      await tauriInvoke("open_containing_folder", { path: path });
     } catch (e) {
       setStatus("打开文件位置失败：" + e, true);
     }
@@ -1432,6 +1737,7 @@
     encodingSelect.value = appConfig.defaultEncoding || "";
     encodingSelect.addEventListener("change", function () {
       saveConfig({ defaultEncoding: encodingSelect.value });
+      updateEditorStatus();
     });
   }
 
@@ -1591,12 +1897,14 @@
       else if (action === "table") insertTable();
       else if (action === "code") insertCodeBlock();
       else if (action === "hr") insertHr();
+      else if (action === "emoji") openEmojiDialog();
       else if (action === "undo") undo();
       else if (action === "redo") redo();
       else if (action === "open") openFile();
       else if (action === "save") saveFile();
       else if (action === "saveas") saveFileAs();
       else if (action === "export") exportHTML();
+      else if (action === "slides") presentSlides();
       else if (action === "clear") clearDraft();
       else if (action === "new") openNewDialog();
       else if (action === "zoom-in") zoomIn();
@@ -1656,6 +1964,7 @@
     updatePlaceholder();
     scheduleAutosave();
     if (splitMode) scheduleSyncEditorToSource();
+    scheduleStatus();
   });
 
   /* 源码分栏：左渲染区 → 右源码（防抖写入，避免每键重绘） */
@@ -1703,7 +2012,10 @@
   editor.addEventListener("focus", updatePlaceholder);
   editor.addEventListener("blur", updatePlaceholder);
 
-  document.addEventListener("selectionchange", updateToolbarState);
+  document.addEventListener("selectionchange", function () {
+    updateToolbarState();
+    scheduleStatus();
+  });
 
   /** 当前选区是否位于列表项（li）内，用于决定 Tab 是否执行缩进 */
   function isSelectionInList() {
@@ -1777,6 +2089,8 @@
    * 初始化：恢复草稿、建立初始历史、注册拖放
    * ===================================================================== */
   async function init() {
+    // 禁用主界面右键菜单（保持应用内统一体验，避免误触系统菜单）
+    document.addEventListener("contextmenu", function (e) { e.preventDefault(); });
     // 先加载同目录配置文件（窗格大小/主题/工具栏布局等），再据其恢复
     await loadConfig();
     // 依据配置动态渲染工具栏（顺序 / 显隐由定制弹窗的 ↑/↓ 调整）
@@ -1790,6 +2104,15 @@
     lastChangeTs = Date.now();
     updateToolbarState();
     setupDragDrop();
+
+    // 状态栏：编辑器内容 / 光标 / 编码变化时刷新（直接写 #status，不弹 Toast）
+    try {
+      if (typeof MutationObserver !== "undefined" && editor) {
+        const mo = new MutationObserver(function () { scheduleStatus(); });
+        mo.observe(editor, { childList: true, subtree: true, characterData: true });
+      }
+    } catch (e) {}
+    updateEditorStatus();
 
     // 顶部提示：点击即可关闭
     const toastEl = document.getElementById("toast");

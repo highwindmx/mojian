@@ -12,6 +12,10 @@
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
   }
 
+  /* 统一隐藏：任何带 .hidden 的元素一律隐藏（覆盖 .toolbar/.pdf-root 等的 display:flex）。
+     用于起始空白界面不显示 PDF 工具栏/侧栏；打开 PDF 后由 pdf.js 移除 .hidden 显示。 */
+  .hidden { display: none !important; }
+
   * { box-sizing: border-box; }
 
   html, body {
@@ -106,6 +110,35 @@
   }
 
   .status-bar.status-error { color: #dc2626; }
+
+  /* PDF 模式：置底状态栏（低于页面；左 消息 / 中 页码 + 翻页 / 右 留白） */
+  .pdf-status-bar {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 12px;
+    height: 32px; padding: 0 12px;
+    background: var(--color-surface);
+    border-top: 1px solid var(--color-border);
+    font-size: 12px;
+  }
+  .pdf-sb-left { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-fg); }
+  .pdf-sb-left.status-error { color: #dc2626; }
+  .pdf-sb-center { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+  .pdf-sb-center .pdf-sb-sep { color: var(--color-muted); }
+  .pdf-sb-center #pdf-page-info { color: var(--color-fg); min-width: 56px; text-align: left; }
+  .pdf-sb-center #pdf-page-jump {
+    width: 56px; padding: 2px 6px; border: 1px solid var(--color-border-strong, var(--color-border));
+    border-radius: 4px; background: var(--color-bg); color: var(--color-fg);
+    font-size: 12px; text-align: center; outline: none;
+  }
+  .pdf-sb-center #pdf-page-jump:focus { border-color: #2563eb; }
+  .pdf-sb-nav {
+    width: 28px; height: 26px; padding: 0; line-height: 1;
+    border: 1px solid var(--color-border-strong, var(--color-border));
+    border-radius: 6px; background: var(--color-bg); color: var(--color-fg);
+    cursor: pointer; font-size: 14px;
+  }
+  .pdf-sb-nav:hover { border-color: var(--color-primary); color: var(--color-primary); }
+  .pdf-sb-right { flex: 1 1 0; min-width: 0; }
 
   /* ============================ 顶部提示 Toast ============================ */
   .toast {
@@ -276,6 +309,50 @@
   }
   .tb-set-row .tb-move:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-primary); }
   .tb-set-row .tb-move:disabled { opacity: 0.35; cursor: default; }
+  .tb-set-row.tb-set-group { flex-wrap: wrap; }
+  .tb-set-children {
+    flex-basis: 100%;
+    margin: -2px 0 2px 26px;
+    font-size: 11px;
+    color: var(--color-muted);
+    line-height: 1.4;
+  }
+
+  /* ============================ PDF 工具栏分组下拉 ============================ */
+  .pdf-group { position: relative; display: inline-flex; }
+  .pdf-group-toggle { gap: 4px; }
+  .pdf-group-toggle::after {
+    content: "";
+    width: 0; height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid currentColor;
+    opacity: 0.7;
+  }
+  .pdf-group-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 132px;
+    padding: 4px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .pdf-group-menu button {
+    min-width: 0;
+    width: 100%;
+    height: 32px;
+    justify-content: flex-start;
+    padding: 0 10px;
+    border-radius: 6px;
+    font-size: 13px;
+  }
 
   /* ============================ 编辑区 ============================ */
   .editor-wrap {
@@ -450,6 +527,25 @@
   }
   .modal-card button.file-pick:hover { border-color: var(--color-primary); }
 
+  /* 路径选择行：只读输入框 + 浏览按钮 */
+  .path-pick-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .path-pick-row input[type="text"] { flex: 1 1 auto; min-width: 0; }
+  .path-pick-row button {
+    flex: 0 0 auto;
+    padding: 8px 12px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: 6px;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .path-pick-row button:hover { border-color: var(--color-primary); }
+
   .modal-actions {
     display: flex;
     justify-content: flex-end;
@@ -578,4 +674,425 @@
     background: #20242b;
     color: #aeb6bf;
     border-left-color: #3a414b;
+  }
+
+  /* =====================================================================
+   * PDF 工具栏补充样式
+   * ===================================================================== */
+  .toolbar button.primary {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #fff;
+  }
+  /* 有未保存修改时，保存按钮高亮提示（配合 pdf.js 的 updateSaveState） */
+  .toolbar button.primary.dirty {
+    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.35);
+    border-color: #dc2626;
+  }
+  .toolbar button.primary.dirty::after {
+    content: " *";
+  }
+  .toolbar button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .toolbar button.active {
+    background: var(--color-primary-soft);
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+  }
+  .pdf-page-box {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--color-muted);
+  }
+  .pdf-page-box #pdf-page-jump {
+    width: 48px;
+    padding: 4px 6px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: 6px;
+    font-size: 12px;
+    text-align: center;
+    outline: none;
+  }
+
+  /* =====================================================================
+   * PDF 阅读 / 工具区布局
+   * ===================================================================== */
+  .pdf-root {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    position: relative;
+  }
+  .pdf-body {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .pdf-sidebar {
+    flex: 0 0 210px;
+    display: flex;
+    flex-direction: column;
+    background: var(--color-surface);
+    border-right: 1px solid var(--color-border);
+    overflow: hidden;
+  }
+  .pdf-sidebar-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 8px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .pdf-sidebar-tabs button {
+    flex: 1;
+    padding: 6px 4px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: 6px;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .pdf-sidebar-tabs button.active {
+    background: var(--color-primary-soft);
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+  }
+  .pdf-thumbs, .pdf-outline {
+    flex: 1 1 auto;
+    overflow: auto;
+    padding: 8px;
+  }
+  .pdf-thumb {
+    position: relative;
+    margin: 0 auto 10px;
+    width: max-content;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: pointer;
+    background: #fff;
+  }
+  .pdf-thumb:hover { border-color: var(--color-primary); }
+  .pdf-thumb canvas { display: block; }
+  .pdf-thumb-num {
+    position: absolute;
+    left: 4px; top: 4px;
+    background: rgba(0,0,0,0.55);
+    color: #fff;
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+  .pdf-outline-list { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+  .pdf-outline-list ul { list-style: none; margin: 0; padding-left: 14px; }
+  .pdf-outline-list a { color: var(--color-primary); cursor: pointer; display: block; padding: 3px 2px; }
+  .pdf-outline-list a:hover { text-decoration: underline; }
+  .pdf-outline-empty { color: var(--color-muted); font-size: 13px; padding: 8px; }
+
+  .pdf-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: auto;
+    background: var(--color-bg);
+    position: relative;
+  }
+  .pdf-main.note-mode { cursor: crosshair; }
+  .pdf-pages {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 16px;
+  }
+  .pdf-page {
+    position: relative;
+    background: #fff;
+    box-shadow: var(--shadow);
+    line-height: 0;
+  }
+  .pdf-canvas { display: block; }
+  /* pdf.js 文本层：透明文字叠在画布上，可选中复制（官方 textLayer 规则 + 选区高亮） */
+  .textLayer {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    overflow: clip;
+    opacity: 1;
+    line-height: 1;
+    text-size-adjust: none;
+    forced-color-adjust: none;
+    transform-origin: 0 0;
+    caret-color: CanvasText;
+    background: transparent;
+    z-index: 2;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .textLayer span, .textLayer br {
+    color: transparent;
+    position: absolute;
+    white-space: pre;
+    cursor: text;
+    transform-origin: 0% 0%;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .textLayer ::selection, .textLayer span::selection {
+    background: rgba(0, 120, 215, 0.28);
+  }
+  .textLayer .search-hit {
+    background: rgba(255, 213, 0, 0.65);
+    border-radius: 2px;
+    color: transparent;
+  }
+  /* 非选择模式（备注/手型）下文本层不拦截点击，使画布能收到点击/拖拽 */
+  .pdf-main.note-mode .textLayer,
+  .pdf-main.hand-mode .textLayer { pointer-events: none; }
+  /* 签章"待放置"态：文字层同样让路，否则点在文字上收不到 click（签章画不上去的根因） */
+  .pdf-pages.sig-placing .textLayer { pointer-events: none; }
+  .pdf-pages.sig-placing .pdf-page { cursor: crosshair; }
+  .pdf-pages.sig-placing .pdf-page::after {
+    content: "";
+    position: absolute; inset: 0;
+    border: 2px dashed var(--color-primary);
+    pointer-events: none;
+    z-index: 4;
+  }
+
+  /* 选中文字高亮 / 划线 overlay（前端可视，保存时写真实 PDF 标注） */
+  .pdf-hl {
+    position: absolute;
+    z-index: 3;
+    pointer-events: none;
+    background: rgba(255, 213, 0, 0.45);
+    border-radius: 2px;
+    mix-blend-mode: multiply;
+  }
+  .pdf-hl.pdf-ul {
+    background: transparent;
+    border-bottom: 2px solid rgba(0, 90, 200, 0.85);
+  }
+  .pdf-sig-overlay {
+    position: absolute;
+    z-index: 3;
+    pointer-events: none;
+  }
+
+  /* 加载遮罩 */
+  .pdf-loading {
+    position: absolute; inset: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(255, 255, 255, 0.72);
+  }
+  .pdf-loading-box {
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    color: var(--color-muted); font-size: 14px;
+  }
+  .spinner {
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 3px solid rgba(0, 0, 0, 0.12); border-top-color: var(--color-primary);
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* 选中文字批注浮条 */
+  .anno-bar {
+    position: fixed; z-index: 60;
+    display: flex; gap: 4px; padding: 4px;
+    background: var(--color-surface); border: 1px solid var(--color-border-strong);
+    border-radius: 8px; box-shadow: var(--shadow);
+  }
+  .anno-bar button {
+    padding: 5px 10px; font-size: 12px;
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-bg); color: var(--color-text);
+    border-radius: 6px; cursor: pointer;
+  }
+  .anno-bar button:hover { border-color: var(--color-primary); color: var(--color-primary); }
+
+  /* 手型模式光标 */
+  .pdf-main.hand-mode { cursor: grab; }
+  .pdf-main.hand-grabbing { cursor: grabbing !important; }
+  .pdf-main.hand-mode .textLayer { cursor: grab; }
+
+  /* 签章手绘板 */
+  .sign-pad-wrap {
+    margin-top: 8px; display: inline-block;
+    border: 1px dashed var(--color-border-strong); border-radius: 6px; background: #fff;
+  }
+  #pdf-sign-pad { display: block; cursor: crosshair; }
+  .modal-card label.checkbox { display: flex; align-items: center; gap: 6px; }
+  .pdf-note-marker {
+    position: absolute;
+    z-index: 5;
+    font-size: 16px;
+    cursor: pointer;
+    user-select: none;
+    line-height: 1;
+    transform: translate(-50%, -100%);
+  }
+  /* 备注气泡：查看内容 + 删除 */
+  .pdf-note-popup {
+    position: fixed;
+    z-index: 70;
+    width: 240px;
+    max-width: 70vw;
+    padding: 10px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--color-text);
+  }
+  .pdf-note-popup-text {
+    max-height: 180px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .pdf-note-popup-bar {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .pdf-note-popup-bar button {
+    padding: 4px 10px;
+    font-size: 12px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: 6px;
+    background: var(--color-bg);
+    color: var(--color-text);
+    cursor: pointer;
+  }
+  .pdf-note-popup-bar button.danger {
+    border-color: #e5484d;
+    color: #e5484d;
+  }
+  .pdf-note-popup-bar button.danger:hover { background: rgba(229, 72, 77, 0.1); }
+
+  /* 侧栏宽度拖拽条 */
+  .pdf-sidebar-resizer {
+    flex: 0 0 5px;
+    cursor: col-resize;
+    background: transparent;
+    position: relative;
+    z-index: 6;
+  }
+  .pdf-sidebar-resizer:hover,
+  body.col-resizing .pdf-sidebar-resizer { background: var(--color-primary-soft); }
+  body.col-resizing { cursor: col-resize; user-select: none; }
+  .pdf-find-count {
+    font-size: 12px;
+    color: var(--color-muted);
+    min-width: 48px;
+    text-align: center;
+  }
+  /* 查找进行中：计数变蓝 + 旋转小圈，提示"正在扫描（大文件可能稍慢）" */
+  .pdf-find-count.is-searching { color: #2563eb; }
+  .pdf-find-count.is-searching::after {
+    content: ""; display: inline-block; width: 10px; height: 10px; margin-left: 6px;
+    border: 2px solid #2563eb; border-top-color: transparent; border-radius: 50%;
+    vertical-align: -1px; animation: pdf-find-spin 0.7s linear infinite;
+  }
+  @keyframes pdf-find-spin { to { transform: rotate(360deg); } }
+
+  /* =====================================================================
+   * 表情选择弹窗
+   * ===================================================================== */
+  .emoji-card { width: 460px; }
+  .emoji-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 4px;
+    max-height: 300px;
+    overflow: auto;
+    margin-top: 8px;
+  }
+  .emoji-cell {
+    font-size: 20px;
+    padding: 6px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+    line-height: 1;
+  }
+  .emoji-cell:hover { border-color: var(--color-primary); background: var(--color-bg); }
+
+  /* =====================================================================
+   * 打印：仅显示 PDF 打印容器
+   * ===================================================================== */
+  #pdf-print { display: none; }
+  @media print {
+    body * { visibility: hidden; }
+    #pdf-print, #pdf-print * { visibility: visible; }
+    #pdf-print {
+      display: block;
+      position: absolute;
+      left: 0; top: 0;
+      width: 100%;
+    }
+    #pdf-print img { width: 100%; page-break-after: always; }
+  }
+
+  /* =====================================================================
+   * Markdown 幻灯片演示 overlay（reveal.js）
+   * ===================================================================== */
+  .reveal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: #1a1a1a;
+    display: flex;
+    flex-direction: column;
+  }
+  .reveal-overlay .reveal {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .reveal-overlay .reveal .slides section {
+    text-align: left;
+  }
+  .reveal-overlay .reveal .slides section h1,
+  .reveal-overlay .reveal .slides section h2 {
+    margin-top: 0;
+  }
+  .slides-bar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: #2a2a2a;
+    color: #eee;
+    border-top: 1px solid #444;
+    font-size: 13px;
+  }
+  .slides-bar button {
+    background: #3a3a3a;
+    color: #eee;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .slides-bar button:hover { background: #4a4a4a; }
+  .slides-bar button.primary { background: var(--color-primary); border-color: var(--color-primary); }
+  .slides-bar button.primary:hover { filter: brightness(1.08); }
+  .slides-bar .divider { width: 1px; height: 20px; background: #555; margin: 0 4px; }
+  .slides-bar #slides-indicator {
+    min-width: 60px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
   }

@@ -12,8 +12,8 @@
       {
         "label": "main",
         "title": "墨笺",
-        "width": 900,
-        "height": 640,
+        "width": 800,
+        "height": 600,
         "minWidth": 200,
         "minHeight": 150,
         "resizable": true,
@@ -42,6 +42,11 @@
       {
         "ext": ["html", "htm"],
         "name": "墨笺 HTML 文档",
+        "role": "Editor"
+      },
+      {
+        "ext": ["pdf"],
+        "name": "墨笺 PDF 文档",
         "role": "Editor"
       }
     ]
