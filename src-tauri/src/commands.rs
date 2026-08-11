@@ -1,7 +1,9 @@
 use serde::Serialize;
 use serde::Deserialize;
+use std::cmp::Ordering;
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 
 /// 打开文件返回的结构体
 #[derive(Serialize)]
@@ -181,6 +183,86 @@ pub fn open_containing_folder(path: String) -> Result<(), String> {
     }
 }
 
+/// 列出目录下所有「受支持类型」的文件（返回全路径，按文件名自然排序）。
+/// 用于顶部「上一个 / 下一个文件」导航。目录不存在 / 无权限时返回空列表（不报错）。
+#[tauri::command]
+pub fn list_supported_files(dir: String) -> Result<Vec<String>, String> {
+    let dir_path = std::path::Path::new(&dir);
+    let mut out: Vec<String> = Vec::new();
+    let entries = match fs::read_dir(dir_path) {
+        Ok(e) => e,
+        Err(e) => return Err(format!("读取目录失败：{}", e)),
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if !p.is_file() {
+            continue;
+        }
+        let s = p.to_string_lossy().to_string();
+        // 仅保留受支持类型（与打开路由保持一致）
+        if crate::file_kind::detect_kind(&s).is_ok() {
+            out.push(s);
+        }
+    }
+    out.sort_by(|a, b| {
+        let na = std::path::Path::new(a)
+            .file_name()
+            .and_then(|x| x.to_str())
+            .unwrap_or(a);
+        let nb = std::path::Path::new(b)
+            .file_name()
+            .and_then(|x| x.to_str())
+            .unwrap_or(b);
+        natural_cmp(na, nb)
+    });
+    Ok(out)
+}
+
+/// 自然排序比较：数字段按数值比较（file2 < file10），其余按字符比较。
+fn natural_cmp(a: &str, b: &str) -> Ordering {
+    let mut ia = a.chars().peekable();
+    let mut ib = b.chars().peekable();
+    while ia.peek().is_some() && ib.peek().is_some() {
+        let ca = *ia.peek().unwrap();
+        let cb = *ib.peek().unwrap();
+        if ca.is_ascii_digit() && cb.is_ascii_digit() {
+            let mut sa = String::new();
+            let mut sb = String::new();
+            while let Some(&c) = ia.peek() {
+                if c.is_ascii_digit() {
+                    sa.push(c);
+                    ia.next();
+                } else {
+                    break;
+                }
+            }
+            while let Some(&c) = ib.peek() {
+                if c.is_ascii_digit() {
+                    sb.push(c);
+                    ib.next();
+                } else {
+                    break;
+                }
+            }
+            let va: u64 = sa.parse().unwrap_or(0);
+            let vb: u64 = sb.parse().unwrap_or(0);
+            if va != vb {
+                return va.cmp(&vb);
+            }
+            if sa.len() != sb.len() {
+                return sa.len().cmp(&sb.len());
+            }
+        } else {
+            if ca != cb {
+                return ca.cmp(&cb);
+            }
+            ia.next();
+            ib.next();
+        }
+    }
+    ia.count().cmp(&ib.count())
+}
+
 /// 配置文件的路径：与当前 exe 同目录下的 mojian.config.json
 fn config_path() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
@@ -316,4 +398,237 @@ fn base64_decode(s: &str) -> Result<Vec<u8>, String> {
         }
     }
     Ok(out)
+}
+
+/// 按传入的类型列表注册/取消注册文件关联（分色墨字图标）。
+/// `types` 中出现的类型（md/html/pdf/svg）将被注册为墨笺默认打开程序；
+/// 未出现的已知类型将被解除注册（仅清除本程序写入的注册表项）。
+/// 写入 HKEY_CURRENT_USER\Software\Classes（普通用户权限即可，无需管理员提权）。
+#[cfg(windows)]
+#[tauri::command]
+pub fn register_file_associations(app: tauri::AppHandle, types: Vec<String>) -> Result<String, String> {
+    use tauri::Manager;
+    use std::process::Command;
+
+    // 定位图标目录：优先用 Tauri 资源目录；直接运行 release exe（未打包）时
+    // resource_dir 可能解析不到，退回 exe 相对路径（target/release/../../icons = src-tauri/icons）。
+    let mut icons: Option<std::path::PathBuf> = None;
+    if let Ok(rd) = app.path().resource_dir() {
+        let p = rd.join("icons");
+        if p.exists() {
+            icons = Some(p);
+        }
+    }
+    if icons.is_none() {
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(exe_dir) = exe.parent() {
+                let fb = exe_dir.join("../../icons");
+                if fb.exists() {
+                    icons = Some(fb);
+                }
+            }
+        }
+    }
+    let icons = match icons {
+        Some(p) => p,
+        None => return Err("找不到图标目录 src-tauri/icons，无法注册分色图标。".into()),
+    };
+
+    let all: &[(&str, &str, &str, &str)] = &[
+        ("md",   "Mojian.Markdown", "墨笺 Markdown 文档", "icon-md.ico"),
+        ("html", "Mojian.HTML",     "墨笺 HTML 文档",     "icon-html.ico"),
+        ("pdf",  "Mojian.PDF",      "墨笺 PDF 文档",      "icon-pdf.ico"),
+        ("svg",  "Mojian.SVG",      "墨笺 SVG 文档",      "icon-svg.ico"),
+    ];
+
+    let exe = std::env::current_exe().map_err(|e| format!("无法获取 exe 路径: {e}"))?;
+    let exe_quoted = format!("\"{}\" \"%1\"", exe.display());
+    let base = "HKEY_CURRENT_USER\\Software\\Classes";
+
+    let mut registered: Vec<&str> = Vec::new();
+    let mut unregistered: Vec<&str> = Vec::new();
+
+    for (ext, progid, desc, icon) in all {
+        let want = types.iter().any(|t| t.eq_ignore_ascii_case(ext));
+        let ext_key = format!("{base}\\.{ext}");
+        let progid_key = format!("{base}\\{progid}");
+        if want {
+            let icon_path = icons.join(icon);
+            if !icon_path.exists() {
+                return Err(format!("图标文件缺失: {}", icon_path.display()));
+            }
+            let icon_str = format!("\"{}\"", icon_path.to_string_lossy().replace('/', "\\"));
+            let default_icon_key = format!("{progid_key}\\DefaultIcon");
+            let cmd_key = format!("{progid_key}\\shell\\open\\command");
+            reg_set(&ext_key, None, progid)?;
+            reg_set(&progid_key, None, desc)?;
+            reg_set(&default_icon_key, None, &icon_str)?;
+            reg_set(&cmd_key, None, &exe_quoted)?;
+            registered.push(ext);
+        } else {
+            // 解除注册：仅删除本程序写入的 ProgID，以及指向它的 .ext 默认值
+            reg_delete_key(&progid_key)?;
+            if let Some(cur) = reg_get_default(&ext_key) {
+                if cur == *progid {
+                    let _ = reg_delete_value(&ext_key, None);
+                }
+            }
+            unregistered.push(ext);
+        }
+    }
+
+    // 温和刷新资源管理器图标缓存（部分系统无效则忽略）
+    let _ = Command::new("ie4uinit").arg("-show").status();
+
+    let reg_str = if registered.is_empty() { "（无）".to_string() } else { registered.join("、") };
+    let unreg_str = if unregistered.is_empty() { "（无）".to_string() } else { unregistered.join("、") };
+    Ok(format!(
+        "已注册：{reg_str}；已解除：{unreg_str}。\n若资源管理器图标未立即更新，请重启资源管理器或重新登录。"
+    ))
+}
+
+#[cfg(windows)]
+fn reg_set(key: &str, value: Option<&str>, data: &str) -> Result<(), String> {
+    let mut cmd = Command::new("reg");
+    cmd.arg("add").arg(key).arg("/t").arg("REG_SZ").arg("/f");
+    match value {
+        Some(v) => {
+            cmd.arg("/v").arg(v).arg("/d").arg(data);
+        }
+        None => {
+            cmd.arg("/ve").arg("/d").arg(data);
+        }
+    }
+    let out = cmd
+        .output()
+        .map_err(|e| format!("调用 reg 命令失败: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "reg add 失败 [{key}]: {}",
+            String::from_utf8_lossy(&out.stderr)
+        ));
+    }
+    Ok(())
+}
+
+/// 返回当前已由本程序注册的文件类型（md/html/pdf/svg 子集）。
+#[cfg(windows)]
+#[tauri::command]
+pub fn get_file_association_state() -> Result<Vec<String>, String> {
+    let all: &[(&str, &str)] = &[
+        ("md",   "Mojian.Markdown"),
+        ("html", "Mojian.HTML"),
+        ("pdf",  "Mojian.PDF"),
+        ("svg",  "Mojian.SVG"),
+    ];
+    let base = "HKEY_CURRENT_USER\\Software\\Classes";
+    let mut registered: Vec<String> = Vec::new();
+    for (ext, progid) in all {
+        let ext_key = format!("{base}\\.{ext}");
+        if let Some(cur) = reg_get_default(&ext_key) {
+            if cur == *progid {
+                registered.push((*ext).to_string());
+            }
+        }
+    }
+    Ok(registered)
+}
+
+#[cfg(windows)]
+fn reg_key_exists(key: &str) -> bool {
+    // 仅看退出码，避免解析本地化（GBK 等）报错文本导致误判
+    match std::process::Command::new("reg").arg("query").arg(key).output() {
+        Ok(o) => o.status.success(),
+        Err(_) => false,
+    }
+}
+
+#[cfg(windows)]
+fn reg_value_exists(key: &str, value: Option<&str>) -> bool {
+    let mut cmd = std::process::Command::new("reg");
+    cmd.arg("query").arg(key);
+    match value {
+        Some(v) => { cmd.arg("/v").arg(v); }
+        None => { cmd.arg("/ve"); }
+    }
+    match cmd.output() {
+        Ok(o) => o.status.success(),
+        Err(_) => false,
+    }
+}
+
+#[cfg(windows)]
+fn reg_delete_key(key: &str) -> Result<(), String> {
+    // 项不存在视为成功（解除注册本就幂等）；先 query 判存在，绕开本地化报错文本
+    if !reg_key_exists(key) {
+        return Ok(());
+    }
+    let out = std::process::Command::new("reg")
+        .arg("delete")
+        .arg(key)
+        .arg("/f")
+        .output()
+        .map_err(|e| format!("调用 reg 命令失败: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "reg delete 失败 [{key}]: {}",
+            String::from_utf8_lossy(&out.stderr)
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn reg_delete_value(key: &str, value: Option<&str>) -> Result<(), String> {
+    if !reg_value_exists(key, value) {
+        return Ok(());
+    }
+    let mut cmd = std::process::Command::new("reg");
+    cmd.arg("delete").arg(key).arg("/f");
+    match value {
+        Some(v) => { cmd.arg("/v").arg(v); }
+        None => { cmd.arg("/ve"); }
+    }
+    let out = cmd
+        .output()
+        .map_err(|e| format!("调用 reg 命令失败: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "reg delete value 失败 [{key}]: {}",
+            String::from_utf8_lossy(&out.stderr)
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn reg_get_default(key: &str) -> Option<String> {
+    let out = std::process::Command::new("reg")
+        .arg("query")
+        .arg(key)
+        .arg("/ve")
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout);
+    for line in s.lines() {
+        if let Some(idx) = line.find("REG_SZ") {
+            return Some(line[idx + 6..].trim().to_string());
+        }
+    }
+    None
+}
+
+#[cfg(not(windows))]
+#[tauri::command]
+pub fn register_file_associations(_app: tauri::AppHandle, _types: Vec<String>) -> Result<String, String> {
+    Err("文件关联注册目前仅支持 Windows。".into())
+}
+
+#[cfg(not(windows))]
+#[tauri::command]
+pub fn get_file_association_state() -> Result<Vec<String>, String> {
+    Ok(Vec::new())
 }

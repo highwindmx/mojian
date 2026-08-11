@@ -60,6 +60,8 @@
   const TOOLBAR_ITEMS = {
     new:        { name:"新建", kind:"action", value:"new", title:"新建文档（HTML 或 Markdown）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>' },
     open:       { name:"打开", kind:"action", value:"open", title:"打开 HTML / Markdown 文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>' },
+    prevfile:   { name:"上一个文件", kind:"action", value:"prevfile", title:"打开同目录下上一个受支持的文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>', keep:true },
+    nextfile:   { name:"下一个文件", kind:"action", value:"nextfile", title:"打开同目录下下一个受支持的文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>', keep:true },
     save:       { name:"保存", kind:"action", value:"save", title:"保存（写回原文件）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>' },
     saveas:     { name:"另存为", kind:"action", value:"saveas", title:"另存为…", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><polyline points="8 11 12 15 16 11"/><path d="M5 19h14"/></svg>' },
     export:     { name:"导出", kind:"action", value:"export", title:"导出为自包含 HTML 文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 21V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/><polyline points="9 13 12 16 15 13"/><line x1="12" y1="16" x2="12" y2="9"/></svg>' },
@@ -95,11 +97,12 @@
     zoomin:     { name:"放大", kind:"action", value:"zoom-in", title:"放大 (Ctrl+=)", label:'+', keep:true },
     split:      { name:"分栏", kind:"action", value:"split", title:"源码分栏（左渲染 / 右源码）", label:'分栏', keep:true },
     source:     { name:"源码", kind:"action", value:"source", title:"切换源码 / 可视化编辑", label:'源码', keep:true },
+    softwrap:   { name:"自动换行", kind:"action", value:"softwrap", title:"切换源码栏自动换行（关闭后长行不换行、可横向滚动）", label:'换行', keep:true },
     ZOOMLABEL:  { kind:"zoomlabel", keep:true },
   };
 
   const DEFAULT_ORDER = [
-    "new","open","save","saveas","export","slides","clear",
+    "new","open","prevfile","nextfile","save","saveas","export","slides","clear",
     "__divider__",
     "undo","redo",
     "__divider__",
@@ -113,7 +116,7 @@
     "__divider__",
     "find",
     "__divider__",
-    "zoomout","ZOOMLABEL","zoomin","split","source",
+    "zoomout","ZOOMLABEL","zoomin","split","source","softwrap",
   ];
 
   /** 解析工具栏配置（缺省回退默认顺序），返回 { order, hidden } */
@@ -160,8 +163,10 @@
       if (item.svg) btn.innerHTML = item.svg;
       else if (item.label) btn.innerHTML = item.label;
       if (item.keep) btn.classList.add("keep");
+      if (item.value === "softwrap") btn.classList.toggle("active", softWrap);
       toolbar.appendChild(btn);
     });
+    updateNavButtons();
   }
 
   /* 自定义弹窗：勾选显隐（核心 keep 控件与缩放标签不参与） */
@@ -256,11 +261,44 @@
   function pdfCustomizeActive() {
     return !!(window.__pdfActive && window.PDFApp && window.PDFApp.openToolbarSettings);
   }
+  // 定制弹窗 Tab 切换（工具栏 / 文件关联）
+  function showTbTab(name) {
+    document.querySelectorAll("#tb-tabs .tb-tab").forEach(function (t) {
+      t.classList.toggle("active", t.dataset.tab === name);
+    });
+    const tb = document.getElementById("tb-panel-toolbar");
+    const ac = document.getElementById("tb-panel-assoc");
+    if (tb) tb.classList.toggle("hidden", name !== "toolbar");
+    if (ac) ac.classList.toggle("hidden", name !== "assoc");
+    // 仅在切到「文件关联」时才查询注册表状态，避免打开弹窗时被 4 次 reg query 拖慢
+    if (name === "assoc") refreshAssocChecks();
+  }
+  document.querySelectorAll("#tb-tabs .tb-tab").forEach(function (t) {
+    t.addEventListener("click", function () { showTbTab(t.dataset.tab); });
+  });
+  // 显隐整个 Tab 栏（PDF 模式复用弹窗时隐藏，仅保留工具栏列表）
+  function setTbTabsVisible(visible) {
+    const tabsEl = document.getElementById("tb-tabs");
+    if (tabsEl) tabsEl.classList.toggle("hidden", !visible);
+    if (!visible) {
+      const tb = document.getElementById("tb-panel-toolbar");
+      const ac = document.getElementById("tb-panel-assoc");
+      if (tb) tb.classList.remove("hidden");
+      if (ac) ac.classList.add("hidden");
+    }
+  }
+
   if (toolbarSettingsBtn) toolbarSettingsBtn.addEventListener("click", function () {
-    if (pdfCustomizeActive()) { window.PDFApp.openToolbarSettings(); return; }
+    if (pdfCustomizeActive()) {
+      window.PDFApp.openToolbarSettings();   // PDF 模式：弹窗内容换成 PDF 按钮
+      setTbTabsVisible(false);               // 隐藏 Tab 栏与「文件关联」面板
+      return;
+    }
     const title = toolbarSettingsModal && toolbarSettingsModal.querySelector("h3");
     if (title) title.textContent = "自定义工具栏";
+    setTbTabsVisible(true);
     openToolbarSettings();
+    showTbTab("toolbar");                    // 编辑器模式：默认停在「工具栏」Tab
   });
   if (toolbarSettingsModal) {
     const ok = document.getElementById("toolbar-settings-ok");
@@ -273,6 +311,42 @@
       appConfig.toolbar = null;
       renderToolbar();
       saveConfig({ toolbar: null });
+    });
+  }
+
+  // 文件类型关联（分色图标）：按勾选状态注册/解除，写入 HKEY_CURRENT_USER（无需管理员）
+  const regAssocBtn = document.getElementById("register-assoc-btn");
+  const regAssocMsg = document.getElementById("register-assoc-msg");
+  function getAssocChecks() {
+    return Array.from(document.querySelectorAll("#toolbar-settings .tb-assoc-check input"))
+      .filter(function (cb) { return cb.checked; })
+      .map(function (cb) { return cb.dataset.assoc; });
+  }
+  async function refreshAssocChecks() {
+    try {
+      const state = await tauriInvoke("get_file_association_state");
+      const set = new Set(Array.isArray(state) ? state : []);
+      document.querySelectorAll("#toolbar-settings .tb-assoc-check input").forEach(function (cb) {
+        cb.checked = set.has(cb.dataset.assoc);
+      });
+    } catch (e) { /* 非 Windows 或查询失败：保留默认（全勾选） */ }
+  }
+  if (regAssocBtn) {
+    regAssocBtn.addEventListener("click", async function () {
+      regAssocBtn.disabled = true;
+      if (regAssocMsg) { regAssocMsg.textContent = "正在应用…"; regAssocMsg.className = "tb-assoc-msg"; }
+      try {
+        const res = await tauriInvoke("register_file_associations", { types: getAssocChecks() });
+        if (regAssocMsg) { regAssocMsg.textContent = res; regAssocMsg.classList.add("ok"); }
+      } catch (e) {
+        if (regAssocMsg) {
+          regAssocMsg.textContent = "操作失败：" + (e && e.message ? e.message : (e || "未知错误"));
+          regAssocMsg.classList.add("err");
+        }
+      } finally {
+        regAssocBtn.disabled = false;
+        refreshAssocChecks();
+      }
     });
   }
 
@@ -337,6 +411,8 @@
    * kind ∈ "html" | "markdown"。为 null 时表示空白草稿（保存走"另存为"）。
    */
   let currentFile = null;
+  let siblingFiles = [];   // 同目录受支持文件列表（按文件名自然排序，全路径）
+  let siblingIndex = -1;   // 当前文件在 siblingFiles 中的下标（-1 表示不在列表中）
   /** 缓存源模板：已加载 html 文件的 <head> 内部 HTML（已剥离 script/on*） */
   let loadedHead = "";
   /** 已加载文件的标题 */
@@ -351,6 +427,8 @@
   let sourceMode = false;
   /** 是否处于源码分栏模式（左渲染 / 右源码，双向同步） */
   let splitMode = false;
+  /** 源码栏（source-view）是否自动换行；false 时长行不换行、可横向滚动 */
+  let softWrap = true;
 
   /* =====================================================================
    * 工具函数：HTML 转义、URL 安全校验、时间戳
@@ -1443,6 +1521,8 @@
     const lower = path.toLowerCase();
     if (lower.endsWith(".pdf")) {
       if (window.PDFApp) window.PDFApp.open(path);
+      currentFile = { path: path, kind: "pdf" };
+      refreshSiblings();
       return;
     }
     // 打开其它文档前，若正处于 PDF 模式则先退出
@@ -1460,6 +1540,7 @@
     else if (splitMode) exitSplitMode();
     currentFile = { path: res.path, kind: res.kind };
     setFilePath(res.path, true);
+    refreshSiblings();
     if (res.kind === "markdown") {
       loadMarkdown(res.content);
     } else if (res.kind === "svg") {
@@ -1468,6 +1549,58 @@
       loadHtmlDocument(res.content);
     }
     setStatus("已打开：" + res.path);
+  }
+
+  /** 取路径所在的目录（兼容 / 与 \\） */
+  function dirOf(p) {
+    const i = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
+    return i < 0 ? "." : p.slice(0, i);
+  }
+
+  /** 刷新同目录受支持文件列表（用于上一个 / 下一个导航）；异步，失败时给出提示 */
+  async function refreshSiblings() {
+    siblingFiles = [];
+    siblingIndex = -1;
+    if (!currentFile || !currentFile.path) { updateNavButtons(); return; }
+    try {
+      const list = await tauriInvoke("list_supported_files", { dir: dirOf(currentFile.path) });
+      if (Array.isArray(list) && list.length) {
+        // 匹配归一化：大小写不敏感（Windows 不区分）+ 分隔符统一为正斜杠（对话框返回的路径可能与 Rust 枚举的 \ 不同）
+        const norm = function (p) { return p.replace(/\\/g, "/").toLowerCase(); };
+        const normCur = norm(currentFile.path);
+        let idx = list.findIndex(function (x) { return norm(x) === normCur; });
+        if (idx < 0) {
+          // 当前文件未命中（罕见），兜底把自身补进列表末尾，保证至少"上一个"可用
+          siblingFiles = list.concat([currentFile.path]);
+          idx = siblingFiles.length - 1;
+        } else {
+          siblingFiles = list;
+        }
+        siblingIndex = idx;
+      }
+    } catch (e) {
+      // 命令不可用 / 目录不可读：给出可见提示，避免"按钮灰着却不知原因"
+      setStatus("无法获取同目录文件列表：" + e, true);
+    }
+    updateNavButtons();
+  }
+
+  /** 切换上一个 / 下一个文件（delta = -1 / +1）；到头即停，不循环 */
+  function goSibling(delta) {
+    if (!siblingFiles.length || siblingIndex < 0) return;
+    const ni = siblingIndex + delta;
+    if (ni < 0 || ni >= siblingFiles.length) return;
+    openFileWithPath(siblingFiles[ni]);
+  }
+
+  /** 根据当前导航状态启用 / 禁用两个按钮 */
+  function updateNavButtons() {
+    if (!toolbar) return;
+    const prev = toolbar.querySelector('[data-action="prevfile"]');
+    const next = toolbar.querySelector('[data-action="nextfile"]');
+    const enabled = siblingFiles.length > 1;
+    if (prev) prev.disabled = !(enabled && siblingIndex > 0);
+    if (next) next.disabled = !(enabled && siblingIndex >= 0 && siblingIndex < siblingFiles.length - 1);
   }
 
   /** 保存当前内容到指定路径（按类型决定序列化方式） */
@@ -1641,6 +1774,7 @@
     editor.style.display = "";
     sourceView.style.display = "block";
     if (editorWrap) editorWrap.classList.add("split");
+    toolbar.classList.add("split");
     splitMode = true;
     setSourceBtnActive();
     saveConfig({ sourceSplit: true });
@@ -1650,6 +1784,7 @@
   function exitSplitMode() {
     if (!splitMode) return;
     if (editorWrap) editorWrap.classList.remove("split");
+    toolbar.classList.remove("split");
     sourceView.style.display = "none";
     splitMode = false;
     setSourceBtnActive();
@@ -1665,6 +1800,18 @@
     if (splitMode) { exitSplitMode(); enterSourceMode(); return; }
     if (sourceMode) exitSourceMode();
     else enterSourceMode();
+  }
+
+  /** 切换源码栏（source-view）是否自动换行；结果持久化到配置 */
+  function setSoftWrap(on) {
+    softWrap = !!on;
+    if (sourceView) {
+      sourceView.wrap = softWrap ? "soft" : "off";
+      sourceView.classList.toggle("wrap-off", !softWrap);
+    }
+    const b = toolbar.querySelector('[data-action="softwrap"]');
+    if (b) b.classList.toggle("active", softWrap);
+    saveConfig({ softWrap: softWrap });
   }
 
   /* =====================================================================
@@ -1925,6 +2072,8 @@
       else if (action === "undo") undo();
       else if (action === "redo") redo();
       else if (action === "open") openFile();
+      else if (action === "prevfile") goSibling(-1);
+      else if (action === "nextfile") goSibling(1);
       else if (action === "save") saveFile();
       else if (action === "saveas") saveFileAs();
       else if (action === "export") exportHTML();
@@ -1935,6 +2084,7 @@
       else if (action === "zoom-out") zoomOut();
       else if (action === "source") toggleSourceMode();
       else if (action === "split") toggleSplitMode();
+      else if (action === "softwrap") setSoftWrap(!softWrap);
       else if (action === "open-folder") openContainingFolder();
       else if (action === "forecolor") { saveSelection(); if (foreColorInput) foreColorInput.click(); }
       else if (action === "backcolor") { saveSelection(); if (backColorInput) backColorInput.click(); }
@@ -2118,6 +2268,12 @@
     document.addEventListener("contextmenu", function (e) { e.preventDefault(); });
     // 先加载同目录配置文件（窗格大小/主题/工具栏布局等），再据其恢复
     await loadConfig();
+    // 源码栏自动换行（默认开启，可从配置恢复）
+    softWrap = getConfig().softWrap !== false;
+    if (sourceView) {
+      sourceView.wrap = softWrap ? "soft" : "off";
+      sourceView.classList.toggle("wrap-off", !softWrap);
+    }
     // 依据配置动态渲染工具栏（顺序 / 显隐由定制弹窗的 ↑/↓ 调整）
     renderToolbar();
     // 启动不再自动恢复上次草稿内容，避免误以为"已打开文件"；

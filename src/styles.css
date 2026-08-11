@@ -39,10 +39,11 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 12px;
     padding: 10px 16px;
     background: var(--color-surface);
-    border-bottom: 1px solid var(--color-border);
-  }
+    border-bottom: 1px solid var(--color-border);  }
 
   .app-header h1 {
     font-size: 16px;
@@ -74,7 +75,13 @@
   .app-header .header-actions {
     display: flex;
     align-items: center;
-    gap: 12px;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+
+  .app-header .header-btn,
+  .app-header .header-select {
+    flex-shrink: 0;
   }
 
   .app-header .header-btn {
@@ -213,6 +220,8 @@
     align-items: center;
     justify-content: center;
     gap: 4px;
+    flex-shrink: 0;
+    white-space: nowrap;
     transition: background 0.12s ease, border-color 0.12s ease;
     user-select: none;
   }
@@ -242,6 +251,7 @@
     color: var(--color-muted);
     min-width: 44px;
     text-align: center;
+    flex-shrink: 0;
     user-select: none;
   }
   .toolbar button.keep { gap: 6px; }
@@ -251,9 +261,19 @@
     border-color: var(--color-primary);
     color: var(--color-primary);
   }
+  /* 换行按钮只作用于源码栏：仅在源码视图(.source-mode)或分栏(.split)时显示 */
+  .toolbar button[data-action="softwrap"] { display: none; }
+  .toolbar.source-mode button[data-action="softwrap"],
+  .toolbar.split button[data-action="softwrap"] { display: inline-flex; }
   /* 纯源码视图下禁用其它格式化/插入按钮，仅保留 keep 类（缩放/源码/分栏） */
   .toolbar.source-mode button:not(.keep) {
     opacity: 0.4;
+    pointer-events: none;
+  }
+  /* 导航 / 其它不可用按钮的统一禁用态 */
+  .toolbar button:disabled {
+    opacity: 0.32;
+    cursor: default;
     pointer-events: none;
   }
 
@@ -296,6 +316,19 @@
     margin: 8px 0;
   }
   .tb-set-row span { flex: 1 1 auto; }
+  .tb-assoc-block {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+  .tb-assoc-title { font-weight: 600; margin-bottom: 6px; }
+  .tb-assoc-block button { margin-top: 4px; }
+  .tb-assoc-checks { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; }
+  .tb-assoc-check { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
+  .tb-assoc-check input { width: 16px; height: 16px; cursor: pointer; }
+  .tb-assoc-msg { margin-top: 8px; font-size: 13px; white-space: pre-line; min-height: 1em; }
+  .tb-assoc-msg.ok { color: #1a7f37; }
+  .tb-assoc-msg.err { color: #c0392b; }
   .tb-set-row .tb-move {
     width: 26px;
     height: 24px;
@@ -310,6 +343,33 @@
   .tb-set-row .tb-move:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-primary); }
   .tb-set-row .tb-move:disabled { opacity: 0.35; cursor: default; }
   .tb-set-row.tb-set-group { flex-wrap: wrap; }
+
+  /* 定制弹窗 Tab（工具栏 / 文件关联） */
+  .tb-tabs {
+    display: flex;
+    gap: 4px;
+    margin: 0 0 14px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .tb-tab {
+    appearance: none;
+    border: none;
+    background: transparent;
+    padding: 8px 14px;
+    font-size: 14px;
+    color: var(--color-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    border-radius: 4px 4px 0 0;
+  }
+  .tb-tab:hover { color: var(--color-text); }
+  .tb-tab.active {
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
+    font-weight: 600;
+  }
+  .tb-tab-panel.hidden { display: none; }
   .tb-set-children {
     flex-basis: 100%;
     margin: -2px 0 2px 26px;
@@ -465,8 +525,14 @@
     color: var(--color-text);
     resize: none;
     box-sizing: border-box;
-    white-space: pre;
+    /* 注意：white-space 会覆盖 textarea 的 wrap 属性。
+       默认 pre-wrap（配合 wrap="soft" 软换行）；关闭换行时用 .wrap-off 切回 pre。 */
+    white-space: pre-wrap;
     tab-size: 2;
+  }
+  /* 源码栏「自动换行关闭」态：长行不换行、横向滚动（与 wrap="off" 配合） */
+  .source-view.wrap-off {
+    white-space: pre;
   }
 
   /* ============================ 弹层 / 对话框 ============================ */
@@ -1102,4 +1168,14 @@
     min-width: 60px;
     text-align: center;
     font-variant-numeric: tabular-nums;
+  }
+
+  /* =====================================================================
+   * 窄窗自适应：极窄时收起非必要提示文字，给按钮/下拉腾空间
+   * （按钮本身已 flex-shrink:0，窄到放不下会自动换行，不再被压变形）
+   * ===================================================================== */
+  @media (max-width: 600px) {
+    .app-header .hint { display: none; }
+    .app-header { padding: 8px 12px; }
+    .toolbar { padding: 6px 10px; gap: 3px; }
   }

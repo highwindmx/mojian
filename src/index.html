@@ -128,9 +128,29 @@
   <!-- ============================ 工具栏自定义弹窗 ============================ -->
   <div class="modal hidden" id="toolbar-settings">
     <div class="modal-card">
-      <h3>自定义工具栏</h3>
-      <p class="modal-desc">勾选要显示的按钮；用 ↓/↑ 调整顺序。</p>
-      <div class="toolbar-settings-list" id="toolbar-settings-list"></div>
+      <h3>自定义</h3>
+      <div class="tb-tabs" id="tb-tabs">
+        <button type="button" class="tb-tab active" data-tab="toolbar">工具栏</button>
+        <button type="button" class="tb-tab" data-tab="assoc">文件关联</button>
+      </div>
+      <div class="tb-tab-panel" id="tb-panel-toolbar">
+        <p class="modal-desc">勾选要显示的按钮；用 ↓/↑ 调整顺序。</p>
+        <div class="toolbar-settings-list" id="toolbar-settings-list"></div>
+      </div>
+      <div class="tb-tab-panel hidden" id="tb-panel-assoc">
+        <div class="tb-assoc-block">
+          <div class="tb-assoc-title">文件类型关联（Windows）</div>
+          <p class="modal-desc">勾选要注册为墨笺默认打开程序的类型（含分色墨字图标）；取消勾选则解除注册。点「应用」生效。</p>
+          <div class="tb-assoc-checks">
+            <label class="tb-assoc-check"><input type="checkbox" data-assoc="md"> Markdown（黑）</label>
+            <label class="tb-assoc-check"><input type="checkbox" data-assoc="html"> HTML（灰）</label>
+            <label class="tb-assoc-check"><input type="checkbox" data-assoc="svg"> SVG（蓝）</label>
+            <label class="tb-assoc-check"><input type="checkbox" data-assoc="pdf"> PDF（红）</label>
+          </div>
+          <button type="button" id="register-assoc-btn">应用</button>
+          <p id="register-assoc-msg" class="tb-assoc-msg"></p>
+        </div>
+      </div>
       <div class="modal-actions">
         <button data-close>取消</button>
         <button id="toolbar-reset">恢复默认</button>
