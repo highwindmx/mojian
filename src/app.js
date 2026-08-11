@@ -389,6 +389,8 @@
   const editor = document.getElementById("editor");
   const toolbar = document.getElementById("toolbar");
   const sourceView = document.getElementById("source-view");
+  const sourceHl = document.getElementById("source-hl");
+  const sourceHlCode = sourceHl ? sourceHl.querySelector("code") : null;
   const editorWrap = document.getElementById("editor-wrap");
   const folderBtn = document.getElementById("open-folder");
   const filePathEl = document.getElementById("file-path");
@@ -1031,6 +1033,7 @@
     const pos = s + text.length;
     sourceView.selectionStart = sourceView.selectionEnd = pos;
     scheduleAutosave();
+    scheduleHighlight();
   }
   const emojiSearch = document.getElementById("emoji-search");
   if (emojiSearch) emojiSearch.addEventListener("input", function () { filterEmoji(emojiSearch.value); });
@@ -1749,6 +1752,7 @@
     toolbar.classList.add("source-mode");
     setSourceBtnActive();
     sourceView.focus();
+    highlightSource();
   }
 
   function exitSourceMode() {
@@ -1777,6 +1781,7 @@
     toolbar.classList.add("split");
     splitMode = true;
     setSourceBtnActive();
+    highlightSource();
     saveConfig({ sourceSplit: true });
   }
 
@@ -1808,6 +1813,10 @@
     if (sourceView) {
       sourceView.wrap = softWrap ? "soft" : "off";
       sourceView.classList.toggle("wrap-off", !softWrap);
+    }
+    if (sourceHl) {
+      sourceHl.classList.toggle("wrap-off", !softWrap);
+      syncHlScroll();
     }
     const b = toolbar.querySelector('[data-action="softwrap"]');
     if (b) b.classList.toggle("active", softWrap);
@@ -2179,10 +2188,48 @@
     }, 300);
   }
 
+  /* ============================ 源码栏语法高亮（highlight.js 叠加层） ============================ */
+  let hlTimer = null;
+  function syncHlScroll() {
+    if (!sourceView || !sourceHl) return;
+    sourceHl.scrollTop = sourceView.scrollTop;
+    sourceHl.scrollLeft = sourceView.scrollLeft;
+  }
+  function highlightLanguage() {
+    if (!currentFile) return null;
+    if (currentFile.kind === "markdown") return "markdown";
+    if (currentFile.kind === "html" || currentFile.kind === "svg") return "xml";
+    return null;
+  }
+  function highlightSource() {
+    if (!sourceView || !sourceHl || !sourceHlCode) return;
+    if (sourceView.style.display === "none") return;
+    if (!window.hljs) return; // 库未加载：保持纯文本，不加 hl-on
+    const code = sourceView.value;
+    const lang = highlightLanguage();
+    let html = "";
+    try {
+      html = lang
+        ? window.hljs.highlight(code, { language: lang }).value
+        : window.hljs.highlightAuto(code).value;
+    } catch (e) {
+      html = "";
+    }
+    sourceHlCode.innerHTML = html + (code.endsWith("\n") ? "\n" : "");
+    sourceView.classList.add("hl-on");
+    syncHlScroll();
+  }
+  function scheduleHighlight() {
+    if (hlTimer) clearTimeout(hlTimer);
+    hlTimer = setTimeout(highlightSource, 150);
+  }
+
   sourceView.addEventListener("input", function () {
     if (suppressSourceInput) { suppressSourceInput = false; return; }
     if (splitMode) scheduleSyncSourceToEditor();
+    scheduleHighlight();
   });
+  sourceView.addEventListener("scroll", syncHlScroll);
 
   editor.addEventListener("focus", updatePlaceholder);
   editor.addEventListener("blur", updatePlaceholder);

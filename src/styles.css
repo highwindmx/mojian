@@ -286,6 +286,7 @@
     gap: 16px;
   }
   .editor-wrap.split .editor,
+  .editor-wrap.split .source-view-wrap,
   .editor-wrap.split .source-view {
     display: block;
     flex: 1 1 50%;
@@ -293,6 +294,9 @@
     min-height: 100%;
     max-width: none;
     align-self: auto;
+  }
+  .editor-wrap.split .source-view {
+    width: 100%;
   }
 
   /* ============================ 工具栏自定义弹窗 ============================ */
@@ -507,7 +511,8 @@
   }
   .editor ul, .editor ol { margin: 0.6em 0; padding-left: 1.6em; }
 
-  /* 源码视图文本域：替代编辑区显示原始源码 */
+  /* 源码视图文本域：替代编辑区显示原始源码。
+     语法高亮由下方 .source-hl 叠加层呈现；开启高亮(.hl-on)后本框文字透明、仅露光标，露出彩色层。 */
   .source-view {
     display: none;
     width: 100%;
@@ -525,13 +530,108 @@
     color: var(--color-text);
     resize: none;
     box-sizing: border-box;
-    /* 注意：white-space 会覆盖 textarea 的 wrap 属性。
-       默认 pre-wrap（配合 wrap="soft" 软换行）；关闭换行时用 .wrap-off 切回 pre。 */
     white-space: pre-wrap;
     tab-size: 2;
+    position: relative;
+    z-index: 2;
   }
+  /* 开启语法高亮：本框透明，露出下方 .source-hl 彩色叠加层（仅光标可见） */
+  .source-view.hl-on {
+    background: transparent;
+    color: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    caret-color: var(--color-text);
+  }
+
+  /* 源码栏容器：相对定位，使 .source-hl 叠加层与之完全对齐 */
+  .source-view-wrap {
+    position: relative;
+    width: 100%;
+    max-width: 820px;
+    min-height: 100%;
+  }
+
+  /* 语法高亮叠加层：垫在 textarea 下方，字体/字号/行高/padding/white-space 与 textarea 完全一致 */
+  .source-hl {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    margin: 0;
+    pointer-events: none;
+    overflow: hidden;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 24px 28px;
+    line-height: 1.6;
+    font-size: 14px;
+    font-family: Consolas, Menlo, Monaco, "Courier New", monospace;
+    color: var(--color-text);
+    tab-size: 2;
+    white-space: pre-wrap;
+  }
+  .source-hl code {
+    font: inherit;
+    background: transparent;
+    padding: 0;
+    color: inherit;
+  }
+  /* 语法高亮配色（浅色主题） */
+  .source-hl .hljs-comment,
+  .source-hl .hljs-quote { color: #6b7280; font-style: italic; }
+  .source-hl .hljs-keyword,
+  .source-hl .hljs-selector-tag,
+  .source-hl .hljs-built_in,
+  .source-hl .hljs-name,
+  .source-hl .hljs-tag { color: #2563eb; }
+  .source-hl .hljs-string,
+  .source-hl .hljs-attr,
+  .source-hl .hljs-template-tag,
+  .source-hl .hljs-addition { color: #16a34a; }
+  .source-hl .hljs-attribute,
+  .source-hl .hljs-variable,
+  .source-hl .hljs-title,
+  .source-hl .hljs-type,
+  .source-hl .hljs-symbol,
+  .source-hl .hljs-bullet,
+  .source-hl .hljs-link { color: #9333ea; }
+  .source-hl .hljs-number,
+  .source-hl .hljs-literal,
+  .source-hl .hljs-meta { color: #c2410c; }
+  .source-hl .hljs-deletion { color: #dc2626; }
+  .source-hl .hljs-emphasis { font-style: italic; }
+  .source-hl .hljs-strong { font-weight: 700; }
+
+  /* 暗色主题下的语法高亮配色（GitHub Dark 风格） */
+  [data-theme="dark"] .source-hl .hljs-comment,
+  [data-theme="dark"] .source-hl .hljs-quote { color: #8b949e; }
+  [data-theme="dark"] .source-hl .hljs-keyword,
+  [data-theme="dark"] .source-hl .hljs-selector-tag,
+  [data-theme="dark"] .source-hl .hljs-built_in,
+  [data-theme="dark"] .source-hl .hljs-name,
+  [data-theme="dark"] .source-hl .hljs-tag { color: #79c0ff; }
+  [data-theme="dark"] .source-hl .hljs-string,
+  [data-theme="dark"] .source-hl .hljs-attr,
+  [data-theme="dark"] .source-hl .hljs-template-tag,
+  [data-theme="dark"] .source-hl .hljs-addition { color: #7ee787; }
+  [data-theme="dark"] .source-hl .hljs-attribute,
+  [data-theme="dark"] .source-hl .hljs-variable,
+  [data-theme="dark"] .source-hl .hljs-title,
+  [data-theme="dark"] .source-hl .hljs-type,
+  [data-theme="dark"] .source-hl .hljs-symbol,
+  [data-theme="dark"] .source-hl .hljs-bullet,
+  [data-theme="dark"] .source-hl .hljs-link { color: #d2a8ff; }
+  [data-theme="dark"] .source-hl .hljs-number,
+  [data-theme="dark"] .source-hl .hljs-literal,
+  [data-theme="dark"] .source-hl .hljs-meta { color: #ffa657; }
+  [data-theme="dark"] .source-hl .hljs-deletion { color: #ff7b72; }
   /* 源码栏「自动换行关闭」态：长行不换行、横向滚动（与 wrap="off" 配合） */
   .source-view.wrap-off {
+    white-space: pre;
+  }
+  .source-hl.wrap-off {
     white-space: pre;
   }
 

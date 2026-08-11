@@ -51,7 +51,10 @@
   <div class="editor-wrap" id="editor-wrap">
     <div class="editor" id="editor" contenteditable="true"
          data-placeholder="在此输入内容，或把本地 .html / .md 文件拖进来…" spellcheck="false"></div>
-    <textarea class="source-view" id="source-view" spellcheck="false"></textarea>
+    <div class="source-view-wrap" id="source-view-wrap">
+      <pre class="source-hl" id="source-hl" aria-hidden="true"><code></code></pre>
+      <textarea class="source-view" id="source-view" spellcheck="false"></textarea>
+    </div>
   </div>
 
   <!-- ============================ 状态栏 ============================ -->
@@ -372,6 +375,8 @@
   <!-- vendor 库：pdf.js（查看渲染）/ pdf-lib（旋转·合并·拆分·备注写入），离线自包含 -->
   <script src="vendor/pdfjs/pdf.min.js"></script>
   <script src="vendor/pdf-lib/pdf-lib.min.js"></script>
+  <!-- 语法高亮（highlight.js，common 构建含 xml / markdown），须在 app.js 之前加载 -->
+  <script src="vendor/highlight.min.js"></script>
   <!-- 编辑器依赖（marked / turndown），须在 app.js 之前加载 -->
   <script src="vendor/marked.min.js"></script>
   <script src="vendor/turndown.js"></script>
