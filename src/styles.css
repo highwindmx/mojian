@@ -379,6 +379,7 @@
     outline: none;
     line-height: 1.7;
     font-size: 16px;
+    overflow: hidden;         /* 兜底：内联 SVG 等超宽内容不会逃出白底卡片盖住主界面 */
   }
 
   .editor:focus {
@@ -433,6 +434,12 @@
   }
   .editor img { max-width: 100%; height: auto; }
   .editor video, .editor iframe { max-width: 100%; border: 0; border-radius: var(--radius); }
+  /* 内联 SVG：等比缩放到渲染区宽度，避免带固定宽高的 SVG 撑爆渲染侧、浮在主界面上 */
+  .editor svg {
+    max-width: 100%;
+    height: auto;
+    display: block;
+  }
   .editor hr {
     border: none;
     border-top: 1px solid var(--color-border-strong);
