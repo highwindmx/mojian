@@ -2,15 +2,16 @@
 
 # 墨笺 (Mojian)
 
-本地 **HTML / Markdown / PDF 多格式编辑器** —— 基于 **Tauri 2（Rust + 系统 WebView）** 的轻量桌面应用。
+本地 **HTML / Markdown / PDF / SVG 多格式编辑器** —— 基于 **Tauri 2（Rust + 系统 WebView）** 的轻量桌面应用。
 
-打开本地 `.html` / `.md` / `.pdf` 文件，就地编辑或查看，覆盖写回原文件。`.md` 为真·WYSIWYG：加载时 `marked` 渲染进编辑区，保存时 `turndown` 转回 Markdown 源格式；PDF 用 pdf.js 渲染，并支持批注、导出、合并与拆分。
+打开本地 `.html` / `.md` / `.pdf` / `.svg` 文件，就地编辑或查看，覆盖写回原文件。`.md` 为真·WYSIWYG：加载时 `marked` 渲染进编辑区，保存时 `turndown` 转回 Markdown 源格式；PDF 用 pdf.js 渲染，并支持批注、导出、合并与拆分；`.svg` 以「左侧预览 + 右侧源码」分栏编辑，实时同步、保存写回原 SVG。
 
 ## ✨ 特性
 
 ### 文档编辑（HTML / Markdown）
 
--   **多格式路由**：按文件后缀自动路由 `.html` / `.md` / `.pdf`；拖放文件即可加载。
+-   **多格式路由**：按文件后缀自动路由 `.html` / `.md` / `.pdf` / `.svg`；拖放文件即可加载。
+-   **SVG 源码 + 预览**：打开 `.svg` 默认进入分栏——左侧渲染预览（保留动画 / 渐变，已剔除 `<script>` 与 `on*` 以提升安全），右侧直接编辑 SVG 源码，输入即防抖刷新预览；`Ctrl+S` 写回原文件。
 -   **Markdown 所见即所得**：编辑时看到渲染效果，保存时无损转回 `.md` 源文。
 -   **富文本排版**：加粗 / 斜体 / 下划线、H1–H6、有序 / 无序列表、引用、链接、图片、表格、代码块、分割线。
 -   **撤销 / 重做**：`Ctrl+Z` / `Ctrl+Y`，以及 `Ctrl+B` / `Ctrl+I` / `Ctrl+U`。

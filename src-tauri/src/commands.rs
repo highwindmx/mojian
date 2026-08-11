@@ -228,6 +228,8 @@ fn infer_mime(path: &str) -> String {
         "video/quicktime".to_string()
     } else if lower.ends_with(".avi") {
         "video/x-msvideo".to_string()
+    } else if lower.ends_with(".svg") {
+        "image/svg+xml".to_string()
     } else if lower.ends_with(".pdf") {
         "application/pdf".to_string()
     } else {
@@ -251,6 +253,7 @@ pub fn get_initial_file() -> Option<String> {
             || lower.ends_with(".markdown")
             || lower.ends_with(".html")
             || lower.ends_with(".htm")
+            || lower.ends_with(".svg")
             || lower.ends_with(".pdf");
         if is_supported && std::path::Path::new(&path).is_file() {
             return Some(path);

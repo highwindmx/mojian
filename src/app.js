@@ -1314,6 +1314,7 @@
 
   /** 解析并加载 HTML 文本到编辑区（剥离 script/on*，保留样式与标题） */
   function loadHtmlDocument(text) {
+    editor.contentEditable = "true";
     const doc = new DOMParser().parseFromString(text, "text/html");
     doc.querySelectorAll("script").forEach(function (s) { s.remove(); });
     stripOnAttributes(doc.documentElement);
@@ -1340,7 +1341,19 @@
   }
 
   /** 加载 Markdown 文本：marked 渲染为 HTML 后净化注入编辑区 */
+  /** 加载 SVG 文件：左侧 editor 作为只读预览，右侧 source-view 作为可编辑源码，默认进入分栏 */
+  function loadSvg(svgText) {
+    editor.contentEditable = "false"; // 预览只读，编辑在右侧源码区进行
+    // 内联渲染（保留动画/渐变等），sanitizeHtmlString 已剔除 <script> 与 on* 属性
+    editor.innerHTML = sanitizeHtmlString(svgText);
+    sourceView.value = svgText;
+    enterSplitMode();
+    updatePlaceholder();
+    updateToolbarState();
+  }
+
   function loadMarkdown(mdText) {
+    editor.contentEditable = "true";
     let html;
     try {
       const parsed = (window.marked && window.marked.parse)
@@ -1402,6 +1415,7 @@
   function detectKindFromPath(path) {
     const lower = path.toLowerCase();
     if (lower.endsWith(".md") || lower.endsWith(".markdown")) return "markdown";
+    if (lower.endsWith(".svg")) return "svg";
     return "html";
   }
 
@@ -1412,7 +1426,7 @@
     try {
       selected = await tauriOpen({
         multiple: false,
-        filters: [{ name: "HTML / Markdown / PDF", extensions: ["html", "htm", "md", "markdown", "pdf"] }],
+        filters: [{ name: "HTML / Markdown / PDF / SVG", extensions: ["html", "htm", "md", "markdown", "pdf", "svg"] }],
       });
     } catch (e) {
       setStatus("打开失败：" + e, true);
@@ -1433,6 +1447,7 @@
     }
     // 打开其它文档前，若正处于 PDF 模式则先退出
     if (window.__pdfActive && window.PDFApp) window.PDFApp.close();
+    editor.contentEditable = "true"; // SVG 模式会把 editor 置为只读，这里恢复可编辑
     let res;
     try {
       const enc = (getConfig().defaultEncoding || "") || undefined;
@@ -1447,6 +1462,8 @@
     setFilePath(res.path, true);
     if (res.kind === "markdown") {
       loadMarkdown(res.content);
+    } else if (res.kind === "svg") {
+      loadSvg(res.content);
     } else {
       loadHtmlDocument(res.content);
     }
@@ -1458,6 +1475,8 @@
     let content;
     if (kind === "markdown") {
       content = serializeMarkdown();
+    } else if (kind === "svg") {
+      content = sourceView.value; // SVG 源码即真相
     } else {
       content = buildFullDocument();
     }
@@ -1493,6 +1512,7 @@
         filters: [
           { name: "HTML", extensions: ["html"] },
           { name: "Markdown", extensions: ["md"] },
+          { name: "SVG", extensions: ["svg"] },
         ],
       });
     } catch (e) {
@@ -1584,6 +1604,8 @@
     let src;
     if (currentFile && currentFile.kind === "markdown") {
       src = serializeMarkdown();
+    } else if (currentFile && currentFile.kind === "svg") {
+      src = sourceView.value; // SVG 下右侧源码才是真相，不要被渲染 DOM 覆盖
     } else {
       src = editor.innerHTML;
     }
@@ -1613,6 +1635,7 @@
     if (sourceMode) exitSourceMode();
     let src;
     if (currentFile && currentFile.kind === "markdown") src = serializeMarkdown();
+    else if (currentFile && currentFile.kind === "svg") src = sourceView.value;
     else src = editor.innerHTML;
     sourceView.value = src;
     editor.style.display = "";
@@ -1662,6 +1685,7 @@
       if (!ok) return;
     }
     if (sourceMode) exitSourceMode();
+    editor.contentEditable = "true";
     editor.innerHTML = "";
     currentFile = { path: null, kind: kind };
     loadedHead = "";
@@ -1976,6 +2000,7 @@
       suppressSourceInput = true;
       sourceView.value = (currentFile && currentFile.kind === "markdown")
         ? serializeMarkdown()
+        : (currentFile && currentFile.kind === "svg") ? sourceView.value
         : editor.innerHTML;
       setTimeout(function () { suppressSourceInput = false; }, 0);
     }, 300);

@@ -48,6 +48,11 @@
         "ext": ["pdf"],
         "name": "墨笺 PDF 文档",
         "role": "Editor"
+      },
+      {
+        "ext": ["svg"],
+        "name": "墨笺 SVG 文档",
+        "role": "Editor"
       }
     ]
   }
