@@ -3,6 +3,7 @@
 //! - .md / .markdown -> "markdown"
 //! - .pdf -> "pdf"
 //! - .svg -> "svg"
+//! - .epub -> "epub"
 //! 其他后缀返回错误。
 
 pub fn detect_kind(path: &str) -> Result<String, String> {
@@ -15,9 +16,11 @@ pub fn detect_kind(path: &str) -> Result<String, String> {
         Ok("pdf".to_string())
     } else if lower.ends_with(".svg") {
         Ok("svg".to_string())
+    } else if lower.ends_with(".epub") {
+        Ok("epub".to_string())
     } else {
         Err(format!(
-            "不支持的文件类型：{}（仅支持 .html / .htm / .md / .markdown / .pdf / .svg）",
+            "不支持的文件类型：{}（仅支持 .html / .htm / .md / .markdown / .pdf / .svg / .epub）",
             path
         ))
     }

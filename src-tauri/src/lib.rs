@@ -20,6 +20,8 @@ pub fn run() {
             commands::get_initial_file,
             commands::register_file_associations,
             commands::get_file_association_state,
+            commands::open_epub,
+            commands::get_epub_chapter,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

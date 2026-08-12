@@ -149,6 +149,7 @@
             <label class="tb-assoc-check"><input type="checkbox" data-assoc="html"> HTML（灰）</label>
             <label class="tb-assoc-check"><input type="checkbox" data-assoc="svg"> SVG（蓝）</label>
             <label class="tb-assoc-check"><input type="checkbox" data-assoc="pdf"> PDF（红）</label>
+            <label class="tb-assoc-check"><input type="checkbox" data-assoc="epub"> EPUB（粉）</label>
           </div>
           <button type="button" id="register-assoc-btn">应用</button>
           <p id="register-assoc-msg" class="tb-assoc-msg"></p>
@@ -216,6 +217,31 @@
       <button id="pdf-find-next" title="下一个">↓</button>
       <span id="pdf-find-count" class="pdf-find-count"></span>
       <button id="pdf-find-close" title="关闭">✕</button>
+    </div>
+  </div>
+
+  <!-- ============================ EPUB 只读阅读视图 ============================ -->
+  <div class="epub-root hidden" id="epub-root">
+    <div class="epub-topbar">
+      <button type="button" id="epub-toc-toggle" title="显示/隐藏目录">目录</button>
+      <button type="button" id="epub-prev" title="上一章">‹ 上一章</button>
+      <span class="epub-title" id="epub-title">—</span>
+      <button type="button" id="epub-next" title="下一章">下一章 ›</button>
+      <span class="epub-spacer"></span>
+      <button type="button" id="epub-find-toggle" title="在本书中查找">🔍 查找</button>
+      <button type="button" id="epub-close" title="退出阅读">✕ 退出</button>
+    </div>
+    <div class="epub-find-bar hidden" id="epub-find-bar">
+      <input type="text" id="epub-find-input" placeholder="在本书中查找（当前章节）" autocomplete="off">
+      <button type="button" id="epub-find-prev" title="上一处">↑</button>
+      <button type="button" id="epub-find-next" title="下一处">↓</button>
+      <span id="epub-find-count"></span>
+      <label title="区分大小写"><input type="checkbox" id="epub-find-case"> 区分</label>
+      <button type="button" id="epub-find-close" title="关闭查找">✕</button>
+    </div>
+    <div class="epub-body">
+      <div class="epub-toc hidden" id="epub-toc"><!-- 章节列表由 app.js 动态生成 --></div>
+      <div class="epub-content" id="epub-content"><!-- 章节 HTML 由 app.js 注入 --></div>
     </div>
   </div>
 

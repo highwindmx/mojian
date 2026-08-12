@@ -1507,7 +1507,7 @@
     try {
       selected = await tauriOpen({
         multiple: false,
-        filters: [{ name: "HTML / Markdown / PDF / SVG", extensions: ["html", "htm", "md", "markdown", "pdf", "svg"] }],
+        filters: [{ name: "HTML / Markdown / PDF / SVG / EPUB", extensions: ["html", "htm", "md", "markdown", "pdf", "svg", "epub"] }],
       });
     } catch (e) {
       setStatus("打开失败：" + e, true);
@@ -1528,8 +1528,16 @@
       refreshSiblings();
       return;
     }
-    // 打开其它文档前，若正处于 PDF 模式则先退出
+    // EPUB：交给 EPUB 只读阅读视图，不走文本编辑器
+    if (lower.endsWith(".epub")) {
+      currentFile = { path: path, kind: "epub" };
+      refreshSiblings();
+      openEpub(path);
+      return;
+    }
+    // 打开其它文档前，若正处于 PDF / EPUB 模式则先退出
     if (window.__pdfActive && window.PDFApp) window.PDFApp.close();
+    if (window.__epubActive) exitEpub();
     editor.contentEditable = "true"; // SVG 模式会把 editor 置为只读，这里恢复可编辑
     let res;
     try {
@@ -1586,6 +1594,222 @@
       setStatus("无法获取同目录文件列表：" + e, true);
     }
     updateNavButtons();
+  }
+
+  /* =====================================================================
+   * EPUB 只读阅读视图（Level A：只预览，不编辑）
+   * 复用 PDF 模块的"接管主视图"模式：显示 #epub-root、隐藏 #editor-wrap 与主 #toolbar。
+   * ===================================================================== */
+  let epubChapters = [];
+  let epubIndex = -1;
+  let epubPath = null;
+  let epubFindMarks = [];   // 当前章节内查找匹配的高亮 <mark> 列表
+  let epubFindIndex = -1;   // 当前激活的匹配下标
+
+  function openEpub(path) {
+    if (!TAURI) { setStatus("当前环境不支持文件读取。", true); return; }
+    window.__epubActive = true;
+    const ew = document.getElementById("editor-wrap");
+    if (ew) ew.style.display = "none";
+    const tb = document.getElementById("toolbar");
+    if (tb) tb.classList.add("hidden");
+    const root = document.getElementById("epub-root");
+    if (root) root.classList.remove("hidden");
+    setStatus("正在解析 EPUB…");
+    tauriInvoke("open_epub", { path })
+      .then(function (meta) {
+        epubChapters = meta.chapters || [];
+        epubPath = path;
+        const toc = document.getElementById("epub-toc");
+        if (toc) {
+          toc.innerHTML = "";
+          epubChapters.forEach(function (ch, i) {
+            const item = document.createElement("div");
+            item.className = "epub-toc-item";
+            item.textContent = ch.title;
+            item.addEventListener("click", function () { renderEpubChapter(i); });
+            toc.appendChild(item);
+          });
+        }
+        if (!epubChapters.length) {
+          setStatus("该 EPUB 没有可阅读的章节。", true);
+          exitEpub();
+          return;
+        }
+        renderEpubChapter(0);
+      })
+      .catch(function (e) {
+        setStatus("打开 EPUB 失败：" + e, true);
+        exitEpub();
+      });
+  }
+
+  function renderEpubChapter(i) {
+    if (i < 0 || i >= epubChapters.length) return;
+    epubIndex = i;
+    const ch = epubChapters[i];
+    // 切换章节时重置查找状态（内容将被整体替换）
+    epubFindMarks = [];
+    epubFindIndex = -1;
+    const fcount = document.getElementById("epub-find-count");
+    if (fcount) fcount.textContent = "";
+    const titleEl = document.getElementById("epub-title");
+    if (titleEl) titleEl.textContent = ch.title;
+    const content = document.getElementById("epub-content");
+    if (content) content.innerHTML = "<p style='padding:24px;color:var(--color-muted)'>正在加载章节…</p>";
+    // 目录高亮当前章
+    const tocItems = document.querySelectorAll("#epub-toc .epub-toc-item");
+    tocItems.forEach(function (el, idx) { el.classList.toggle("active", idx === i); });
+    // 首尾禁用翻页按钮
+    const prev = document.getElementById("epub-prev");
+    const next = document.getElementById("epub-next");
+    if (prev) prev.disabled = (i === 0);
+    if (next) next.disabled = (i === epubChapters.length - 1);
+    tauriInvoke("get_epub_chapter", { path: epubPath, href: ch.href })
+      .then(function (res) {
+        if (content) {
+          content.innerHTML = res.html || "";
+          content.scrollTop = 0;
+        }
+      })
+      .catch(function (e) {
+        if (content) content.innerHTML = "<p style='padding:24px;color:#c0392b'>章节加载失败：" + e + "</p>";
+      });
+  }
+
+  function exitEpub() {
+    window.__epubActive = false;
+    const root = document.getElementById("epub-root");
+    if (root) root.classList.add("hidden");
+    const ew = document.getElementById("editor-wrap");
+    if (ew) ew.style.display = "";
+    const tb = document.getElementById("toolbar");
+    if (tb) tb.classList.remove("hidden");
+    epubChapters = [];
+    epubIndex = -1;
+    epubPath = null;
+    epubFindMarks = [];
+    epubFindIndex = -1;
+    const fb = document.getElementById("epub-find-bar");
+    if (fb) fb.classList.add("hidden");
+  }
+
+  function bindEpubControls() {
+    const prev = document.getElementById("epub-prev");
+    const next = document.getElementById("epub-next");
+    const tocToggle = document.getElementById("epub-toc-toggle");
+    const close = document.getElementById("epub-close");
+    const toc = document.getElementById("epub-toc");
+    if (prev) prev.addEventListener("click", function () { if (epubIndex > 0) renderEpubChapter(epubIndex - 1); });
+    if (next) next.addEventListener("click", function () { if (epubIndex < epubChapters.length - 1) renderEpubChapter(epubIndex + 1); });
+    if (tocToggle && toc) tocToggle.addEventListener("click", function () { toc.classList.toggle("hidden"); });
+    if (close) close.addEventListener("click", exitEpub);
+    // 查找功能（当前章节内）
+    const findToggle = document.getElementById("epub-find-toggle");
+    const findBar = document.getElementById("epub-find-bar");
+    const findInput = document.getElementById("epub-find-input");
+    const findPrev = document.getElementById("epub-find-prev");
+    const findNext = document.getElementById("epub-find-next");
+    const findClose = document.getElementById("epub-find-close");
+    const findCase = document.getElementById("epub-find-case");
+    if (findToggle && findBar) findToggle.addEventListener("click", function () {
+      findBar.classList.toggle("hidden");
+      if (!findBar.classList.contains("hidden") && findInput) findInput.focus();
+    });
+    if (findInput) {
+      findInput.addEventListener("input", runEpubFind);
+      findInput.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); epubFindGo(e.shiftKey ? -1 : 1); }
+      });
+    }
+    if (findCase) findCase.addEventListener("change", runEpubFind);
+    if (findPrev) findPrev.addEventListener("click", function () { epubFindGo(-1); });
+    if (findNext) findNext.addEventListener("click", function () { epubFindGo(1); });
+    if (findClose) findClose.addEventListener("click", function () {
+      if (findBar) findBar.classList.add("hidden");
+      clearEpubFind();
+      const fc = document.getElementById("epub-find-count");
+      if (fc) fc.textContent = "";
+    });
+  }
+
+  /* ---------- EPUB 查找（当前章节内，纯前端高亮 + 导航） ---------- */
+  function clearEpubFind() {
+    const content = document.getElementById("epub-content");
+    if (content) {
+      const marks = content.querySelectorAll("mark");
+      marks.forEach(function (m) {
+        const parent = m.parentNode;
+        while (m.firstChild) parent.insertBefore(m.firstChild, m);
+        parent.removeChild(m);
+        parent.normalize();
+      });
+    }
+    epubFindMarks = [];
+    epubFindIndex = -1;
+  }
+
+  function runEpubFind() {
+    const content = document.getElementById("epub-content");
+    const input = document.getElementById("epub-find-input");
+    const countEl = document.getElementById("epub-find-count");
+    if (!content || !input) return;
+    clearEpubFind();
+    const q = input.value;
+    if (!q) { if (countEl) countEl.textContent = ""; return; }
+    const caseSensitive = !!(document.getElementById("epub-find-case") &&
+      document.getElementById("epub-find-case").checked);
+    let re;
+    try {
+      const esc = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      re = new RegExp(esc, caseSensitive ? "g" : "gi");
+    } catch (e) { if (countEl) countEl.textContent = "无效"; return; }
+    const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, null);
+    const textNodes = [];
+    let node;
+    while ((node = walker.nextNode())) {
+      const p = node.parentNode;
+      if (p && (p.tagName === "STYLE" || p.tagName === "SCRIPT")) continue;
+      if (!node.nodeValue || node.nodeValue.length === 0) continue;
+      if (!re.test(node.nodeValue)) continue;
+      textNodes.push(node);
+    }
+    textNodes.forEach(function (tn) {
+      const text = tn.nodeValue;
+      re.lastIndex = 0;
+      const ranges = [];
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        if (m[0].length === 0) { re.lastIndex++; continue; }
+        ranges.push([m.index, m.index + m[0].length]);
+      }
+      // 从后往前包裹，避免索引偏移
+      for (let k = ranges.length - 1; k >= 0; k--) {
+        const start = ranges[k][0], end = ranges[k][1];
+        const r = document.createRange();
+        r.setStart(tn, start);
+        r.setEnd(tn, end);
+        const mark = document.createElement("mark");
+        try { r.surroundContents(mark); epubFindMarks.push(mark); } catch (e) { /* 忽略跨节点异常 */ }
+      }
+    });
+    epubFindIndex = epubFindMarks.length ? 0 : -1;
+    highlightEpubFind();
+  }
+
+  function highlightEpubFind() {
+    epubFindMarks.forEach(function (mk, i) { mk.classList.toggle("current", i === epubFindIndex); });
+    const cur = epubFindMarks[epubFindIndex];
+    const countEl = document.getElementById("epub-find-count");
+    if (countEl) countEl.textContent = epubFindMarks.length
+      ? ((epubFindIndex + 1) + "/" + epubFindMarks.length) : "0";
+    if (cur) cur.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+
+  function epubFindGo(delta) {
+    if (!epubFindMarks.length) return;
+    epubFindIndex = (epubFindIndex + delta + epubFindMarks.length) % epubFindMarks.length;
+    highlightEpubFind();
   }
 
   /** 切换上一个 / 下一个文件（delta = -1 / +1）；到头即停，不循环 */
@@ -2332,6 +2556,7 @@
     lastChangeTs = Date.now();
     updateToolbarState();
     setupDragDrop();
+    bindEpubControls();
 
     // 状态栏：编辑器内容 / 光标 / 编码变化时刷新（直接写 #status，不弹 Toast）
     try {

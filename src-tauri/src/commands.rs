@@ -1,9 +1,14 @@
 use serde::Serialize;
 use serde::Deserialize;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::fs;
+use std::io::{Cursor, Read};
 use std::path::PathBuf;
 use std::process::Command;
+use quick_xml::events::Event;
+use quick_xml::reader::Reader;
+use zip::ZipArchive;
 
 /// 打开文件返回的结构体
 #[derive(Serialize)]
@@ -136,6 +141,325 @@ pub fn save_files_bytes(files: Vec<BytesFile>) -> Result<(), String> {
             .map_err(|e| format!("写入 {} 失败：{}", f.path, e))?;
     }
     Ok(())
+}
+
+/// ===================== EPUB 只读支持 =====================
+/// EPUB 本质是 ZIP 包：META-INF/container.xml -> content.opf（manifest + spine）-> 多个 XHTML 章节。
+/// 本模块只做「只读预览」：open_epub 解析出章节目录，get_epub_chapter 取出单章并内联图片/CSS 为自包含 HTML。
+
+#[derive(Serialize)]
+pub struct EpubChapter {
+    pub id: String,
+    pub title: String,
+    /// 相对 OPF 目录归一化后的 ZIP 内路径
+    pub href: String,
+}
+
+#[derive(Serialize)]
+pub struct EpubMeta {
+    pub chapters: Vec<EpubChapter>,
+}
+
+#[derive(Serialize)]
+pub struct EpubChapterHtml {
+    pub html: String,
+}
+
+/// 把 ZIP 内某条目读为字符串（EPUB 多为 UTF-8，顺手去 BOM）。
+fn read_zip_string(archive: &mut ZipArchive<Cursor<Vec<u8>>>, name: &str) -> Result<String, String> {
+    let mut f = archive
+        .by_name(name)
+        .map_err(|e| format!("读取 {} 失败：{}", name, e))?;
+    let mut buf = Vec::new();
+    f.read_to_end(&mut buf)
+        .map_err(|e| format!("读取 {} 失败：{}", name, e))?;
+    let s = String::from_utf8_lossy(&buf).into_owned();
+    Ok(s.strip_prefix('\u{feff}').unwrap_or(&s).to_string())
+}
+
+/// 路径工具：取父目录（以 / 分隔）
+fn parent_dir(p: &str) -> String {
+    match p.rfind('/') {
+        Some(i) => p[..i].to_string(),
+        None => String::new(),
+    }
+}
+
+/// 路径工具：拼接 base/rel
+fn join_path(base: &str, rel: &str) -> String {
+    if base.is_empty() {
+        rel.to_string()
+    } else {
+        format!("{}/{}", base, rel)
+    }
+}
+
+/// 路径工具：解析 . 与 .. 归一化
+fn normalize_path(p: &str) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    for seg in p.split('/') {
+        if seg.is_empty() || seg == "." {
+            continue;
+        } else if seg == ".." {
+            parts.pop();
+        } else {
+            parts.push(seg);
+        }
+    }
+    parts.join("/")
+}
+
+/// 解析 container.xml，取出 OPF 的 full-path
+fn parse_container_opf(xml: &str) -> Result<String, String> {
+    let mut reader = Reader::from_str(xml);
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+                let tag = String::from_utf8_lossy(e.name().as_ref()).to_lowercase();
+                if tag == "rootfile" {
+                    for a in e.attributes().flatten() {
+                        let key = String::from_utf8_lossy(a.key.as_ref()).to_lowercase();
+                        if key == "full-path" {
+                            return Ok(String::from_utf8_lossy(&a.value).to_string());
+                        }
+                    }
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => return Err(format!("解析 container.xml 失败：{}", e)),
+            _ => {}
+        }
+        buf.clear();
+    }
+    Err("container.xml 中未找到 rootfile".to_string())
+}
+
+/// 解析 OPF：返回 (manifest[id] -> (href, media_type), spine 顺序的 idref 列表)
+fn parse_opf(xml: &str) -> Result<(HashMap<String, (String, String)>, Vec<String>), String> {
+    let mut reader = Reader::from_str(xml);
+    let mut buf = Vec::new();
+    let mut manifest: HashMap<String, (String, String)> = HashMap::new();
+    let mut spine: Vec<String> = Vec::new();
+    let mut in_manifest = false;
+    let mut in_spine = false;
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+                let tag = String::from_utf8_lossy(e.name().as_ref()).to_lowercase();
+                if tag == "manifest" {
+                    in_manifest = true;
+                } else if tag == "spine" {
+                    in_spine = true;
+                } else if (in_manifest && tag == "item") || (in_spine && tag == "itemref") {
+                    let mut id = String::new();
+                    let mut href = String::new();
+                    let mut mt = String::new();
+                    for a in e.attributes().flatten() {
+                        let key = String::from_utf8_lossy(a.key.as_ref()).to_lowercase();
+                        let val = String::from_utf8_lossy(&a.value).to_string();
+                        match key.as_str() {
+                            "id" | "idref" => id = val,
+                            "href" => href = val,
+                            "media-type" => mt = val,
+                            _ => {}
+                        }
+                    }
+                    if in_manifest {
+                        if !id.is_empty() && !href.is_empty() {
+                            manifest.insert(id.clone(), (href, mt));
+                        }
+                    } else if in_spine && !id.is_empty() {
+                        spine.push(id);
+                    }
+                }
+            }
+            Ok(Event::End(e)) => {
+                let tag = String::from_utf8_lossy(e.name().as_ref()).to_lowercase();
+                if tag == "manifest" {
+                    in_manifest = false;
+                } else if tag == "spine" {
+                    in_spine = false;
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => return Err(format!("解析 OPF 失败：{}", e)),
+            _ => {}
+        }
+        buf.clear();
+    }
+    Ok((manifest, spine))
+}
+
+/// 从章节 XHTML 提取标题：优先 <title>，其次首个 <h1>
+fn extract_title(archive: &mut ZipArchive<Cursor<Vec<u8>>>, href: &str) -> Option<String> {
+    let html = read_zip_string(archive, href).ok()?;
+    for tag in ["title", "h1"] {
+        if let Some(t) = extract_tag_text(&html, tag) {
+            let t = t.trim().to_string();
+            if !t.is_empty() {
+                return Some(t);
+            }
+        }
+    }
+    None
+}
+
+/// 提取某个标签内的纯文本（剔除嵌套标签）
+fn extract_tag_text(html: &str, tag: &str) -> Option<String> {
+    let open = format!("<{}", tag);
+    let start = html.find(&open)?;
+    let gt = html[start..].find('>')? + start;
+    let close = format!("</{}>", tag);
+    let close_pos = html[gt..].find(&close)? + gt;
+    let inner = &html[gt + 1..close_pos];
+    let mut out = String::new();
+    let mut in_tag = false;
+    for c in inner.chars() {
+        if c == '<' {
+            in_tag = true;
+        } else if c == '>' {
+            in_tag = false;
+        } else if !in_tag {
+            out.push(c);
+        }
+    }
+    Some(out.trim().to_string())
+}
+
+/// 取资源的内联 data URI MIME
+fn data_mime(path: &str) -> &'static str {
+    match path.rsplit('.').next().unwrap_or("").to_lowercase().as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "svg" => "image/svg+xml",
+        "webp" => "image/webp",
+        "css" => "text/css",
+        "js" => "application/javascript",
+        "woff" => "font/woff",
+        "woff2" => "font/woff2",
+        "ttf" => "font/ttf",
+        "otf" => "font/otf",
+        _ => "application/octet-stream",
+    }
+}
+
+/// 把单个本地引用（src/href）解析为 ZIP 内路径并内联成 data URI；非本地引用原样返回。
+fn inline_one(archive: &mut ZipArchive<Cursor<Vec<u8>>>, val: &str, base_dir: &str) -> String {
+    let v = val.trim();
+    if v.is_empty()
+        || v.starts_with("http://")
+        || v.starts_with("https://")
+        || v.starts_with("data:")
+        || v.starts_with("mailto:")
+        || v.starts_with("javascript:")
+        || v.starts_with('#')
+    {
+        return val.to_string();
+    }
+    let resolved = normalize_path(&join_path(base_dir, v));
+    if let Ok(mut f) = archive.by_name(&resolved) {
+        let mut buf = Vec::new();
+        if f.read_to_end(&mut buf).is_ok() {
+            let mime = data_mime(&resolved);
+            let b64 = base64_encode(&buf);
+            return format!("data:{};base64,{}", mime, b64);
+        }
+    }
+    val.to_string()
+}
+
+/// 扫描 HTML 中所有 src="..." / href="..." / xlink:href="..."，将本地资源内联为 data URI。
+fn inline_resources(
+    archive: &mut ZipArchive<Cursor<Vec<u8>>>,
+    html: &str,
+    base_dir: &str,
+) -> Result<String, String> {
+    let attrs = [
+        "src=\"", "src='", "href=\"", "href='", "xlink:href=\"", "xlink:href='",
+    ];
+    let mut result = String::with_capacity(html.len() * 2);
+    let mut start = 0;
+    loop {
+        let mut best: Option<(usize, &str, char)> = None;
+        for a in attrs.iter() {
+            if let Some(p) = html[start..].find(a) {
+                let abs = start + p;
+                if best.is_none() || abs < best.as_ref().unwrap().0 {
+                    let q = a.chars().last().unwrap();
+                    best = Some((abs, a, q));
+                }
+            }
+        }
+        let (abs, a, q) = match best {
+            Some(v) => v,
+            None => {
+                result.push_str(&html[start..]);
+                break;
+            }
+        };
+        result.push_str(&html[start..abs]);
+        let val_start = abs + a.len();
+        let closing = html[val_start..]
+            .find(q)
+            .ok_or_else(|| format!("未闭合的属性：{}", a))?;
+        let val_end = val_start + closing;
+        let val = &html[val_start..val_end];
+        let replacement = inline_one(archive, val, base_dir);
+        result.push_str(a);
+        result.push_str(&replacement);
+        result.push(q);
+        start = val_end + 1;
+    }
+    Ok(result)
+}
+
+/// 打开 EPUB：解析出章节目录（顺序 + 标题）。
+#[tauri::command]
+pub fn open_epub(path: String) -> Result<EpubMeta, String> {
+    let bytes = fs::read(&path).map_err(|e| format!("读取文件失败：{}", e))?;
+    let mut archive =
+        ZipArchive::new(Cursor::new(bytes)).map_err(|e| format!("不是有效的 EPUB（ZIP）文件：{}", e))?;
+
+    let container = read_zip_string(&mut archive, "META-INF/container.xml")?;
+    let opf_path = parse_container_opf(&container)?;
+    let opf_dir = parent_dir(&opf_path);
+    let opf = read_zip_string(&mut archive, &opf_path)?;
+    let (manifest, spine) = parse_opf(&opf)?;
+
+    let mut chapters = Vec::new();
+    for idref in spine {
+        if let Some((href, mt)) = manifest.get(&idref) {
+            let media = mt.to_lowercase();
+            if media.contains("xhtml") || media.contains("svg+xml") {
+                let norm_href = normalize_path(&join_path(&opf_dir, href));
+                let title = extract_title(&mut archive, &norm_href)
+                    .unwrap_or_else(|| format!("第 {} 章", chapters.len() + 1));
+                chapters.push(EpubChapter {
+                    id: idref,
+                    title,
+                    href: norm_href,
+                });
+            }
+        }
+    }
+    if chapters.is_empty() {
+        return Err("EPUB 中未找到可阅读的 XHTML 章节".to_string());
+    }
+    Ok(EpubMeta { chapters })
+}
+
+/// 取出某章节并内联资源，返回自包含 HTML 字符串。
+#[tauri::command]
+pub fn get_epub_chapter(path: String, href: String) -> Result<EpubChapterHtml, String> {
+    let bytes = fs::read(&path).map_err(|e| format!("读取文件失败：{}", e))?;
+    let mut archive =
+        ZipArchive::new(Cursor::new(bytes)).map_err(|e| format!("不是有效的 EPUB（ZIP）文件：{}", e))?;
+    let chapter_dir = parent_dir(&href);
+    let chapter = read_zip_string(&mut archive, &href)?;
+    let html = inline_resources(&mut archive, &chapter, &chapter_dir)?;
+    Ok(EpubChapterHtml { html })
 }
 
 /// 返回应用版本号（取 Cargo 包版本）。
@@ -314,6 +638,8 @@ fn infer_mime(path: &str) -> String {
         "image/svg+xml".to_string()
     } else if lower.ends_with(".pdf") {
         "application/pdf".to_string()
+    } else if lower.ends_with(".epub") {
+        "application/epub+zip".to_string()
     } else {
         "application/octet-stream".to_string()
     }
@@ -336,7 +662,8 @@ pub fn get_initial_file() -> Option<String> {
             || lower.ends_with(".html")
             || lower.ends_with(".htm")
             || lower.ends_with(".svg")
-            || lower.ends_with(".pdf");
+            || lower.ends_with(".pdf")
+            || lower.ends_with(".epub");
         if is_supported && std::path::Path::new(&path).is_file() {
             return Some(path);
         }
@@ -439,6 +766,7 @@ pub fn register_file_associations(app: tauri::AppHandle, types: Vec<String>) -> 
         ("html", "Mojian.HTML",     "墨笺 HTML 文档",     "icon-html.ico"),
         ("pdf",  "Mojian.PDF",      "墨笺 PDF 文档",      "icon-pdf.ico"),
         ("svg",  "Mojian.SVG",      "墨笺 SVG 文档",      "icon-svg.ico"),
+        ("epub",  "Mojian.EPUB",     "墨笺 EPUB 电子书",   "icon-epub.ico"),
     ];
 
     let exe = std::env::current_exe().map_err(|e| format!("无法获取 exe 路径: {e}"))?;
@@ -520,6 +848,7 @@ pub fn get_file_association_state() -> Result<Vec<String>, String> {
         ("html", "Mojian.HTML"),
         ("pdf",  "Mojian.PDF"),
         ("svg",  "Mojian.SVG"),
+        ("epub",  "Mojian.EPUB"),
     ];
     let base = "HKEY_CURRENT_USER\\Software\\Classes";
     let mut registered: Vec<String> = Vec::new();
