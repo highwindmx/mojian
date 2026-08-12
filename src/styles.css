@@ -290,6 +290,7 @@
     align-items: stretch;
     justify-content: center;
     gap: 16px;
+    overflow: hidden;          /* 各列独立滚动，避免整页滚动条干扰 */
   }
   .editor-wrap.split .editor,
   .editor-wrap.split .source-view-wrap,
@@ -300,10 +301,15 @@
     min-height: 100%;
     max-width: none;
     align-self: auto;
+    overflow: auto;            /* 左渲染 / 右源码各自内部滚动（修复分栏下左栏滚轮失效） */
   }
   .editor-wrap.split .source-view {
     width: 100%;
   }
+
+  /* ============================ 源码视图（单栏：隐藏渲染区，仅显示源码） ============================ */
+  .editor-wrap.source .editor { display: none; }
+  .editor-wrap.source .source-view-wrap { display: block; }
 
   /* ============================ 工具栏自定义弹窗 ============================ */
   .toolbar-settings-list {
@@ -563,8 +569,11 @@
     caret-color: var(--color-text);
   }
 
-  /* 源码栏容器：相对定位，使 .source-hl 叠加层与之完全对齐 */
+  /* 源码栏容器：相对定位，使 .source-hl 叠加层与之完全对齐。
+     默认隐藏：避免在非分栏/非源码模式下作为空块占位（挤占左侧预览、形成空白右栏）。
+     仅在 .editor-wrap.split（分栏）或 .editor-wrap.source（源码视图）下显示。 */
   .source-view-wrap {
+    display: none;
     position: relative;
     width: 100%;
     max-width: 820px;

@@ -1980,6 +1980,7 @@
     editor.style.display = "none";
     sourceView.style.display = "block";
     sourceMode = true;
+    if (editorWrap) editorWrap.classList.add("source");
     toolbar.classList.add("source-mode");
     setSourceBtnActive();
     sourceView.focus();
@@ -1992,6 +1993,7 @@
     sourceView.style.display = "none";
     editor.style.display = "";
     sourceMode = false;
+    if (editorWrap) editorWrap.classList.remove("source");
     toolbar.classList.remove("source-mode");
     setSourceBtnActive();
     editor.focus();
