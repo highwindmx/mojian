@@ -323,6 +323,10 @@
       .map(function (cb) { return cb.dataset.assoc; });
   }
   async function refreshAssocChecks() {
+    const loading = document.getElementById("register-assoc-loading");
+    const checks = document.querySelector("#tb-panel-assoc .tb-assoc-checks");
+    if (loading) loading.classList.remove("hidden");
+    if (checks) checks.classList.add("loading");
     try {
       const state = await tauriInvoke("get_file_association_state");
       const set = new Set(Array.isArray(state) ? state : []);
@@ -330,6 +334,10 @@
         cb.checked = set.has(cb.dataset.assoc);
       });
     } catch (e) { /* 非 Windows 或查询失败：保留默认（全勾选） */ }
+    finally {
+      if (loading) loading.classList.add("hidden");
+      if (checks) checks.classList.remove("loading");
+    }
   }
   if (regAssocBtn) {
     regAssocBtn.addEventListener("click", async function () {
@@ -1559,7 +1567,6 @@
     } else {
       loadHtmlDocument(res.content);
     }
-    setStatus("已打开：" + res.path);
   }
 
   /** 取路径所在的目录（兼容 / 与 \\） */
@@ -1900,7 +1907,7 @@
         if (!paths.length) return;
         openFileWithPath(paths[0]).then(function () {
           if (paths.length > 1) {
-            setStatus("已打开：" + paths[0] + "（一次仅加载一个文件）");
+            setStatus("一次仅加载一个文件（已加载首个）");
           }
         });
       });

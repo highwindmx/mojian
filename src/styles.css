@@ -56,22 +56,6 @@
     color: var(--color-muted);
   }
 
-  .app-header .title-zone {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-  }
-
-  .app-header .file-path {
-    font-size: 12px;
-    color: var(--color-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 52vw;
-  }
-
   .app-header .header-actions {
     display: flex;
     align-items: center;
@@ -108,6 +92,10 @@
 
   /* ============================ 状态栏 ============================ */
   .status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
     padding: 6px 16px;
     background: var(--color-surface);
     border-top: 1px solid var(--color-border);
@@ -116,7 +104,25 @@
     min-height: 28px;
   }
 
-  .status-bar.status-error { color: #dc2626; }
+  /* 状态栏左侧：当前文件路径（常驻，与右侧实时信息并存） */
+  .status-bar .file-path {
+    font-size: 12px;
+    color: var(--color-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  /* 状态栏右侧：字数 / 编码 / 光标 / 临时消息 */
+  .status-bar .status-stats {
+    flex-shrink: 0;
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  .status-bar #status.status-error { color: #dc2626; }
 
   /* PDF 模式：置底状态栏（低于页面；左 消息 / 中 页码 + 翻页 / 右 留白） */
   .pdf-status-bar {
@@ -330,6 +336,9 @@
   .tb-assoc-checks { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; }
   .tb-assoc-check { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
   .tb-assoc-check input { width: 16px; height: 16px; cursor: pointer; }
+  .tb-assoc-loading { margin: 2px 0 4px; font-size: 13px; color: var(--color-muted); }
+  .tb-assoc-loading::before { content: "◐ "; }
+  .tb-assoc-checks.loading { opacity: 0.5; pointer-events: none; }
   .tb-assoc-msg { margin-top: 8px; font-size: 13px; white-space: pre-line; min-height: 1em; }
   .tb-assoc-msg.ok { color: #1a7f37; }
   .tb-assoc-msg.err { color: #c0392b; }
@@ -374,6 +383,16 @@
     font-weight: 600;
   }
   .tb-tab-panel.hidden { display: none; }
+  .tb-toolbar-reset-row { display: flex; justify-content: flex-end; margin-top: 16px; }
+  .tb-toolbar-reset-row button {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-surface);
+    color: var(--color-text);
+  }
   .tb-set-children {
     flex-basis: 100%;
     margin: -2px 0 2px 26px;

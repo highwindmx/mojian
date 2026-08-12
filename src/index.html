@@ -11,9 +11,6 @@
 <body>
   <!-- ============================ 顶部应用栏 ============================ -->
   <header class="app-header">
-    <div class="title-zone">
-      <div class="file-path" id="file-path" title="">未打开文件</div>
-    </div>
     <div class="header-actions">
       <button id="open-folder" class="header-btn" title="在文件管理器中打开当前文件所在位置" disabled>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
@@ -58,7 +55,10 @@
   </div>
 
   <!-- ============================ 状态栏 ============================ -->
-  <div class="status-bar" id="status"></div>
+  <div class="status-bar">
+    <span class="file-path" id="file-path" title="">未打开文件</span>
+    <span class="status-stats" id="status"></span>
+  </div>
 
   <!-- ============================ 查找替换浮条 ============================ -->
   <div class="find-bar hidden" id="find-bar">
@@ -139,11 +139,15 @@
       <div class="tb-tab-panel" id="tb-panel-toolbar">
         <p class="modal-desc">勾选要显示的按钮；用 ↓/↑ 调整顺序。</p>
         <div class="toolbar-settings-list" id="toolbar-settings-list"></div>
+        <div class="tb-toolbar-reset-row">
+          <button type="button" id="toolbar-reset">恢复默认</button>
+        </div>
       </div>
       <div class="tb-tab-panel hidden" id="tb-panel-assoc">
         <div class="tb-assoc-block">
           <div class="tb-assoc-title">文件类型关联（Windows）</div>
           <p class="modal-desc">勾选要注册为墨笺默认打开程序的类型（含分色墨字图标）；取消勾选则解除注册。点「应用」生效。</p>
+          <p id="register-assoc-loading" class="tb-assoc-loading hidden">正在检测文件关联状态…</p>
           <div class="tb-assoc-checks">
             <label class="tb-assoc-check"><input type="checkbox" data-assoc="md"> Markdown（黑）</label>
             <label class="tb-assoc-check"><input type="checkbox" data-assoc="html"> HTML（灰）</label>
@@ -157,7 +161,6 @@
       </div>
       <div class="modal-actions">
         <button data-close>取消</button>
-        <button id="toolbar-reset">恢复默认</button>
         <button class="primary" id="toolbar-settings-ok">完成</button>
       </div>
     </div>
