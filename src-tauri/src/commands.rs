@@ -611,6 +611,33 @@ pub fn write_config(content: String) -> Result<(), String> {
     fs::write(&path, content).map_err(|e| format!("写入配置失败：{}", e))
 }
 
+/// 「我的签章」库文件路径：与 exe 同目录下的 mojian_signatures.json。
+/// 放到 exe 旁边便于随程序携带 / 备份；若该目录不可写（如安装到 Program Files 无权限），
+/// 则由前端回落到 localStorage。
+fn signatures_path() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    Some(dir.join("mojian_signatures.json"))
+}
+
+/// 读取「我的签章」库（JSON 文本）。文件不存在时返回空数组 "[]"。
+#[tauri::command]
+pub fn load_signatures() -> Result<String, String> {
+    let path = signatures_path().ok_or_else(|| "无法确定签章库路径".to_string())?;
+    if !path.exists() {
+        return Ok(String::from("[]"));
+    }
+    fs::read_to_string(&path).map_err(|e| format!("读取签章库失败：{}", e))
+}
+
+/// 写入「我的签章」库（JSON 文本）。
+/// 失败（如 exe 在受保护目录无写权限）返回错误，由前端回落到 localStorage。
+#[tauri::command]
+pub fn save_signatures(content: String) -> Result<(), String> {
+    let path = signatures_path().ok_or_else(|| "无法确定签章库路径".to_string())?;
+    fs::write(&path, content).map_err(|e| format!("写入签章库失败：{}", e))
+}
+
 /// 根据后缀推断图片 MIME（不依赖外部 crate，覆盖常见类型）。
 fn infer_mime(path: &str) -> String {
     let lower = path.to_lowercase();

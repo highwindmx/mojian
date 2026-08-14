@@ -107,8 +107,13 @@ window.PDFApp = (function () {
   let pendingNote = null;
   let notes = [];
   let highlights = [];     // [{ page, quads:[[8 numbers]...], type:'highlight'|'underline' }]
-  let signatures = [];     // [{ page, x, y, w, h, dataUrl, bytes }]  (x,y 为 PDF 坐标，左上)
+  let signatures = [];     // [{ id, page, x, y, w, h, dataUrl, bytes }]  (x,y 为 PDF 坐标，左上)
+  let sigScale = 1;        // 签章放置时的整体缩放（弹窗「大小」滑块，1 = 原始画板尺寸）
+  let sigWhiteBg = true;   // 导出时把签名合成到白底（去掉 alpha/SMask，避免 Adobe 报"页面错误"）
+  let sigSeq = 0;          // 签章自增 id（前端交互/编辑定位用）
   let pendingSig = null;   // { dataUrl, bytes, w, h }  待放置的签章
+  let sigReplaceId = null; // 替换模式：正在被替换的签章 id（非 null 时选图直接替换，不进放置态）
+  let sigSuppressClick = false; // 签章交互后抑制 pagesEl 的 click（避免误触发备注/放置）
   let watermarkCfg = null; // { text, size, opacity, color, diagonal }
   let pageRotations = {};
   let pageViewports = {};
@@ -280,8 +285,8 @@ window.PDFApp = (function () {
     /* —— 分组（下拉） —— 箭头只用 CSS ::after 绘制，label 不再带字面 ▾（否则会显示两个箭头） */
     "save-as-group": { name: "另存为", kind: "group", label: "另存为", title: "另存为 / 导出",
                        children: ["save-as-pdf", "export-img", "export-word"] },
-    "tools-group":    { name: "其他工具", kind: "group", label: "其他工具", title: "水印 / 签章 / 合并 / 拆分",
-                       children: ["watermark", "signature", "merge", "split"] },
+    "tools-group":    { name: "其他工具", kind: "group", label: "其他工具", title: "水印 / 合并 / 拆分",
+                       children: ["watermark", "merge", "split"] },
   };
   /* 用户指定的初始顺序（备注按钮已移除；100% / 适合宽度 / 选择手型 默认隐藏，可在定制里开启；
    * 旋转展开为三个内联按钮；页码的上一页/下一页与页码输入框放在底部状态栏，不进工具栏） */
@@ -296,6 +301,7 @@ window.PDFApp = (function () {
     "__divider__",
     "rotate-left", "rotate-right", "rotate-all",
     "__divider__",
+    "signature",
     "tools-group",
     "__divider__",
     "zoom-100", "fit", "mouse-mode",   // 默认隐藏，但保留在列表里可一键开启
@@ -597,6 +603,7 @@ window.PDFApp = (function () {
 
     // 页面点击：备注模式 / 签章放置
     pagesEl.addEventListener("click", function (e) {
+      if (sigSuppressClick) { sigSuppressClick = false; return; }
       // 签章放置：文字层会盖在 canvas 之上，必须用 .pdf-page 定位
       if (pendingSig) {
         e.preventDefault();
@@ -614,7 +621,7 @@ window.PDFApp = (function () {
         pushHistory();
         // 约定：x,y 为签章"左上角"的 PDF 坐标（renderSignaturesForPage / save 均按此解释）
         signatures.push({
-          page: sigNum, x: p[0], y: p[1], w: sw, h: sh,
+          id: ++sigSeq, page: sigNum, x: p[0], y: p[1], w: sw, h: sh,
           dataUrl: pendingSig.dataUrl, bytes: pendingSig.bytes
         });
         pendingSig = null;
@@ -634,6 +641,17 @@ window.PDFApp = (function () {
       noteTextInput.value = "";
       openModal(noteDialog);
       noteTextInput.focus();
+    });
+
+    // 已放置签章：拖动移动 / 拖角缩放 / 单击弹编辑菜单
+    pagesEl.addEventListener("pointerdown", onSigPointerDown);
+
+    // 点击签章菜单 / 签章以外区域时收起菜单
+    document.addEventListener("click", function (e) {
+      if (sigMenuEl && !sigMenuEl.classList.contains("hidden") &&
+          !sigMenuEl.contains(e.target) && !e.target.closest(".pdf-sig-overlay")) {
+        hideSigMenu();
+      }
     });
 
     // 选中文字 → 显示批注浮条
@@ -919,6 +937,7 @@ window.PDFApp = (function () {
     if (thumbObserver) { thumbObserver.disconnect(); thumbObserver = null; }
     pagesEl.innerHTML = ""; thumbsEl.innerHTML = ""; outlineEl.innerHTML = "";
     pagesEl.classList.remove("sig-placing");
+    sigReplaceId = null; hideSigMenu();
     pendingSig = null; clearHistory(); hideNotePopup();
     if (mainEl) mainEl.classList.remove("hand-mode", "hand-grabbing");
     // 还原全局状态栏（取消隐藏），隐藏 PDF 专用置底状态栏
@@ -1079,16 +1098,129 @@ window.PDFApp = (function () {
     signatures.filter(function (s) { return s.page === num; }).forEach(function (s) {
       const tl = viewport.convertToViewportPoint(s.x, s.y);
       const br = viewport.convertToViewportPoint(s.x + s.w, s.y - s.h);
+      const wrap = document.createElement("div");
+      wrap.className = "pdf-sig-overlay";
+      wrap.dataset.sigId = s.id;
+      wrap.style.left = Math.min(tl[0], br[0]) + "px";
+      wrap.style.top = Math.min(tl[1], br[1]) + "px";
+      wrap.style.width = Math.abs(br[0] - tl[0]) + "px";
+      wrap.style.height = Math.abs(br[1] - tl[1]) + "px";
       const img = document.createElement("img");
       img.src = s.dataUrl;
-      img.className = "pdf-sig-overlay";
-      img.style.left = Math.min(tl[0], br[0]) + "px";
-      img.style.top = Math.min(tl[1], br[1]) + "px";
-      img.style.width = Math.abs(br[0] - tl[0]) + "px";
-      img.style.height = Math.abs(br[1] - tl[1]) + "px";
-      pageEl.appendChild(img);
+      img.className = "pdf-sig-img";
+      img.draggable = false;
+      if (sigWhiteBg) img.style.background = "#ffffff";   // 白底模式下与导出一致（WYSIWYG）
+      wrap.appendChild(img);
+      const h = document.createElement("div");
+      h.className = "pdf-sig-resize";
+      wrap.appendChild(h);
+      pageEl.appendChild(wrap);
     });
   }
+
+  /* 已放置签章的交互：拖动移动 / 拖角缩放 / 单击弹「删除 / 替换」菜单 */
+  function onSigPointerDown(e) {
+    if (pendingSig) return;                 // 放置态：交给 .sig-placing 规则，让点击落到页面
+    const overlay = e.target.closest(".pdf-sig-overlay");
+    if (!overlay) return;
+    const sigId = Number(overlay.dataset.sigId);
+    const sig = signatures.find(function (s) { return s.id === sigId; });
+    if (!sig) return;
+    hideSigMenu();
+    e.preventDefault();
+    e.stopPropagation();
+    const pageEl = overlay.closest(".pdf-page");
+    const num = Number(pageEl.dataset.num);
+    const vp = pageViewports[num];
+    if (!vp) return;
+    const handle = e.target.closest(".pdf-sig-resize");
+    const mode = handle ? "resize" : "move";
+    const startX = e.clientX, startY = e.clientY;
+    const startLeft = parseFloat(overlay.style.left) || 0;
+    const startTop = parseFloat(overlay.style.top) || 0;
+    const startW = parseFloat(overlay.style.width) || 0;
+    const startH = parseFloat(overlay.style.height) || 0;
+    let moved = false;
+    overlay.classList.add("selected");
+    try { overlay.setPointerCapture(e.pointerId); } catch (err) {}
+
+    function onMove(ev) {
+      const dx = ev.clientX - startX, dy = ev.clientY - startY;
+      if (!moved && Math.hypot(dx, dy) > 3) moved = true;
+      if (mode === "move") {
+        overlay.style.left = (startLeft + dx) + "px";
+        overlay.style.top = (startTop + dy) + "px";
+      } else {
+        overlay.style.width = Math.max(20, startW + dx) + "px";
+        overlay.style.height = Math.max(20, startH + dy) + "px";
+      }
+    }
+    function onUp() {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      try { overlay.releasePointerCapture(e.pointerId); } catch (err) {}
+      overlay.classList.remove("selected");
+      sigSuppressClick = true;              // 阻止随后冒泡的 pagesEl click 误触发备注/放置
+      if (!moved) { showSigMenu(sig, overlay); return; }
+      // 提交最终 PDF 坐标（按当前缩放/旋转换算，保证与画布一致、缩放后不错位）
+      const nl = parseFloat(overlay.style.left) || 0;
+      const nt = parseFloat(overlay.style.top) || 0;
+      const nw = parseFloat(overlay.style.width) || 0;
+      const nh = parseFloat(overlay.style.height) || 0;
+      const tl = vp.convertToPdfPoint(nl, nt);
+      const br = vp.convertToPdfPoint(nl + nw, nt + nh);
+      sig.x = tl[0]; sig.y = tl[1];
+      sig.w = Math.abs(br[0] - tl[0]); sig.h = Math.abs(br[1] - tl[1]);
+      pushHistory(); dirty = true; updateSaveState();
+      setStatus("已更新签章位置/大小，点「保存」写回文件");
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
+
+  /* 签章编辑菜单（删除 / 替换） */
+  let sigMenuEl = null;
+  function ensureSigMenu() {
+    if (sigMenuEl) return sigMenuEl;
+    sigMenuEl = document.createElement("div");
+    sigMenuEl.className = "pdf-sig-menu hidden";
+    sigMenuEl.innerHTML =
+      '<button type="button" data-sig-act="replace">替换</button>' +
+      '<button type="button" data-sig-act="delete" class="danger">删除</button>';
+    const root = $("pdf-root");
+    (root || document.body).appendChild(sigMenuEl);
+    sigMenuEl.addEventListener("click", function (e) {
+      const b = e.target.closest("[data-sig-act]"); if (!b) return;
+      const act = b.dataset.sigAct;
+      const id = Number(sigMenuEl.dataset.sigId);
+      const sig = signatures.find(function (s) { return s.id === id; });
+      if (!sig) { hideSigMenu(); return; }
+      if (act === "delete") {
+        const i = signatures.findIndex(function (s) { return s.id === id; });
+        if (i >= 0) signatures.splice(i, 1);
+        pushHistory(); dirty = true; updateSaveState();
+        const ov = pagesEl.querySelector('.pdf-sig-overlay[data-sig-id="' + id + '"]');
+        if (ov) ov.remove();
+        setStatus("已删除签章");
+      } else if (act === "replace") {
+        sigReplaceId = id;                  // 进入替换模式：选图后直接替换该签章字节
+        const fi = $("pdf-sign-file");
+        if (fi) fi.click();
+      }
+      hideSigMenu();
+    });
+    return sigMenuEl;
+  }
+  function showSigMenu(sig, overlay) {
+    const menu = ensureSigMenu();
+    menu.dataset.sigId = sig.id;
+    const r = overlay.getBoundingClientRect();
+    menu.style.left = r.left + "px";
+    menu.style.top = (r.bottom + 6) + "px";
+    menu.classList.remove("hidden");
+    sigSuppressClick = true;                // 本次点击不触发 pagesEl（菜单本身是独立元素）
+  }
+  function hideSigMenu() { if (sigMenuEl) sigMenuEl.classList.add("hidden"); }
 
   async function renderThumb(num, force) {
     if (!pdfDoc) return;
@@ -1382,19 +1514,42 @@ window.PDFApp = (function () {
         arr.push(dict);
         pg.node.set(PDFLib.PDFName.of("Annots"), pdfLibDoc.context.obj(arr));
       });
-      // 签章（烤进页面）
+      // 签章：作为 PDF Stamp 注释写入（位于注释层之上，不会被内容流 / 置顶 OCG 图层盖住）
       for (const s of signatures) {
         const idx = s.page - 1;
         const pg = pdfLibDoc.getPages()[idx];
         if (!pg) continue;
-        const img = await pdfLibDoc.embedPng(s.bytes);
-        pg.drawImage(img, { x: s.x, y: s.y - s.h, width: s.w, height: s.h, opacity: 1 });
+        const bytesToEmbed = sigWhiteBg ? await flattenSigToWhite(s.bytes) : s.bytes;
+        const img = await pdfLibDoc.embedPng(bytesToEmbed);
+        // 外观流必须是 Form XObject（直接引用 Image XObject 为 /AP/N 不符合规范，多数阅读器不渲染 → 看似"没保存"）
+        const w = s.w, h = s.h;
+        const formContent = "q " + w + " 0 0 " + h + " 0 0 cm /Im0 Do Q";
+        const formDict = pdfLibDoc.context.obj({
+          Type: "XObject", Subtype: "Form", FormType: 1,
+          BBox: [0, 0, w, h],
+          Resources: { XObject: { Im0: img.ref } },
+        });
+        const formStream = pdfLibDoc.context.stream(new TextEncoder().encode(formContent), formDict);
+        const formRef = pdfLibDoc.context.register(formStream);
+        const dict = pdfLibDoc.context.obj({
+          Type: "Annot", Subtype: "Stamp",
+          Rect: [s.x, s.y - s.h, s.x + s.w, s.y],
+          AP: { N: formRef },
+          F: 4, Border: [0, 0, 0],
+        });
+        const existing = pg.node.Annots();
+        const arr = existing ? existing.asArray().slice() : [];
+        arr.push(dict);
+        pg.node.set(PDFLib.PDFName.of("Annots"), pdfLibDoc.context.obj(arr));
       }
       // 水印（文字渲染为图片平铺，支持中文）
       if (watermarkCfg) {
         await applyWatermarkToDoc(pdfLibDoc, watermarkCfg);
       }
-      const newBytes = await pdfLibDoc.save();
+      // 关闭对象流（object streams）/ 交叉引用流，输出经典 xref 表结构。
+      // pdf-lib 默认会升级为 %PDF-1.7 + 对象流 + /XRef 流，常常是 Acrobat 报
+      // "本页面存在错误" 的诱因；关闭后兼容性最佳（仍保留全部页面/注释/签章）。
+      const newBytes = await pdfLibDoc.save({ useObjectStreams: false });
       pdfLibDoc = null;
       return newBytes;
     }
@@ -1488,7 +1643,7 @@ window.PDFApp = (function () {
         const pages = await out.copyPages(d, d.getPageIndices());
         pages.forEach(function (pg) { out.addPage(pg); });
       }
-      const outBytes = await out.save();
+      const outBytes = await out.save({ useObjectStreams: false });
       let savePath = await tauriSave({ filters: [{ name: "PDF", extensions: ["pdf"] }] });
       if (!savePath) { hideLoading(); return; }
       if (!/\.pdf$/i.test(savePath)) savePath += ".pdf";
@@ -1548,7 +1703,7 @@ window.PDFApp = (function () {
           const d = await PDFLib.PDFDocument.create();
           const [pg] = await d.copyPages(srcDoc, [i]);
           d.addPage(pg);
-          files.push({ path: base + "_第" + (i + 1) + "页.pdf", data: bytesToB64(await d.save()) });
+          files.push({ path: base + "_第" + (i + 1) + "页.pdf", data: bytesToB64(await d.save({ useObjectStreams: false })) });
         }
       } else {
         const range = ($("pdf-split-range") ? $("pdf-split-range").value : "").trim();
@@ -1559,7 +1714,7 @@ window.PDFApp = (function () {
           const d = await PDFLib.PDFDocument.create();
           const pages = await d.copyPages(srcDoc, g);
           pages.forEach(function (pg) { d.addPage(pg); });
-          files.push({ path: base + "_part" + (gi + 1) + ".pdf", data: bytesToB64(await d.save()) });
+          files.push({ path: base + "_part" + (gi + 1) + ".pdf", data: bytesToB64(await d.save({ useObjectStreams: false })) });
         }
       }
       await invoke("save_files_bytes", { files });
@@ -1792,7 +1947,7 @@ window.PDFApp = (function () {
         }
       }
     });
-    return returnBytes ? await doc.save() : null;
+    return returnBytes ? await doc.save({ useObjectStreams: false }) : null;
   }
   function hexToRgb(hex) {
     hex = (hex || "#888888").replace("#", "");
@@ -1812,11 +1967,32 @@ window.PDFApp = (function () {
     const loadBtn = $("pdf-sign-load");
     const clearBtn = $("pdf-sign-clear");
     const okBtn = $("pdf-sign-ok");
+    const penEl = $("pdf-sign-pen"), penValEl = $("pdf-sign-pen-val");
+    const scaleEl = $("pdf-sign-scale"), scaleValEl = $("pdf-sign-scale-val");
+    const whiteEl = $("pdf-sign-white");
+    let penWidth = penEl ? Number(penEl.value) || 2 : 2;
+    if (penEl) penEl.addEventListener("input", function () { penWidth = Number(penEl.value) || 2; if (penValEl) penValEl.textContent = penEl.value; });
+    if (scaleEl) scaleEl.addEventListener("input", function () { sigScale = (Number(scaleEl.value) || 100) / 100; if (scaleValEl) scaleValEl.textContent = scaleEl.value + "%"; });
+    if (whiteEl) whiteEl.addEventListener("change", function () { sigWhiteBg = !!whiteEl.checked; });
     if (loadBtn && fileInput) loadBtn.addEventListener("click", function () { fileInput.click(); });
     if (fileInput) fileInput.addEventListener("change", function () {
       const f = fileInput.files && fileInput.files[0]; if (!f) return;
       const r = new FileReader();
-      r.onload = function () { drawToPad(r.result); };
+      r.onload = function () {
+        if (sigReplaceId != null) {
+          const sig = signatures.find(function (s) { return s.id === sigReplaceId; });
+          if (sig) {
+            sig.dataUrl = r.result;
+            sig.bytes = dataURLToBytes(r.result);
+            pushHistory(); dirty = true; updateSaveState();
+            const pe = pagesEl.querySelector('.pdf-page[data-num="' + sig.page + '"]');
+            if (pe) renderPage(sig.page, true);
+          }
+          sigReplaceId = null;
+          return;
+        }
+        drawToPad(r.result);
+      };
       r.readAsDataURL(f);
     });
     if (clearBtn) clearBtn.addEventListener("click", function () { if (pad) { const c = pad.getContext("2d"); c.clearRect(0, 0, pad.width, pad.height); } });
@@ -1825,17 +2001,97 @@ window.PDFApp = (function () {
       if (!pad) return;
       const dataUrl = pad.toDataURL("image/png");
       const bytes = dataURLToBytes(dataUrl);
-      pendingSig = { dataUrl: dataUrl, bytes: bytes, w: pad.width, h: pad.height };
+      pendingSig = { dataUrl: dataUrl, bytes: bytes, w: Math.round(pad.width * sigScale), h: Math.round(pad.height * sigScale) };
       // 关键：进入"放置态"，让文字层不再拦截点击（否则点在文字上收不到 click）
       if (pagesEl) pagesEl.classList.add("sig-placing");
       setStatus("请在 PDF 页面上点击要放置签章的位置（Esc 取消）");
       toast("点击 PDF 页面放置签章");
     });
-    if (pad) {
-      const c = pad.getContext("2d");
-      c.lineWidth = 2; c.lineCap = "round"; c.strokeStyle = "#111";
-      let drawing = false, lx = 0, ly = 0;
-      pad.addEventListener("mousedown", function (e) { drawing = true; const r = pad.getBoundingClientRect(); lx = e.clientX - r.left; ly = e.clientY - r.top; });
+    // —— 我的签章：localStorage 持久化，便于下次直接使用 ——
+    const savedListEl = $("pdf-sign-saved");
+    const SAVED_KEY = "mojian.savedSignatures";  // localStorage 兜底（exe 目录不可写时）
+    // 优先从 exe 同目录的 mojian_signatures.json 读取（随程序携带 / 备份）；
+    // 读不到（文件不存在或命令不可用）则回落 localStorage。
+    async function loadSavedSignatures() {
+      try {
+        const txt = await invoke("load_signatures");
+        const arr = JSON.parse(txt || "[]");
+        if (Array.isArray(arr)) {
+          try { localStorage.setItem(SAVED_KEY, JSON.stringify(arr)); } catch (e) {}
+          return arr;
+        }
+      } catch (e) { /* 回落 localStorage */ }
+      try { return JSON.parse(localStorage.getItem(SAVED_KEY) || "[]") || []; }
+      catch (e) { return []; }
+    }
+    // 写入：先写 exe 旁 JSON，再同步一份到 localStorage 兜底；返回是否成功写入 exe 文件。
+    async function persistSaved(list) {
+      const txt = JSON.stringify(list);
+      let ok = false;
+      try { await invoke("save_signatures", { content: txt }); ok = true; } catch (e) { ok = false; }
+      try { localStorage.setItem(SAVED_KEY, txt); } catch (e) {}
+      return ok;
+    }
+    function padHasInk(p) {
+      if (!p) return false;
+      const c = p.getContext("2d");
+      const d = c.getImageData(0, 0, p.width, p.height).data;
+      for (let i = 3; i < d.length; i += 4) { if (d[i] > 0) return true; }
+      return false;
+    }
+    async function renderSavedSignatures() {
+      if (!savedListEl) return;
+      const list = await loadSavedSignatures();
+      savedListEl.innerHTML = "";
+      if (!list.length) {
+        const tip = document.createElement("div");
+        tip.className = "sign-saved-item empty";
+        tip.textContent = "暂无（手绘或选图后点「存为常用」）";
+        savedListEl.appendChild(tip);
+        return;
+      }
+      list.forEach(function (item) {
+        const cell = document.createElement("div");
+        cell.className = "sign-saved-item";
+        cell.title = "点击使用 · 右键删除";
+        const im = document.createElement("img");
+        im.src = item.dataUrl;
+        cell.appendChild(im);
+        cell.addEventListener("click", function () {
+          const bytes = dataURLToBytes(item.dataUrl);
+          pendingSig = { dataUrl: item.dataUrl, bytes: bytes, w: Math.round((item.w || 320) * sigScale), h: Math.round((item.h || 140) * sigScale) };
+          closeModal(dlg);
+          if (pagesEl) pagesEl.classList.add("sig-placing");
+          setStatus("请在 PDF 页面上点击要放置签章的位置（Esc 取消）");
+          toast("点击 PDF 页面放置签章");
+        });
+        cell.addEventListener("contextmenu", function (e) {
+          e.preventDefault();
+          loadSavedSignatures().then(function (all) {
+            const l = all.filter(function (x) { return x.id !== item.id; });
+            persistSaved(l).then(renderSavedSignatures);
+          });
+        });
+        savedListEl.appendChild(cell);
+      });
+    }
+    if (savedListEl) renderSavedSignatures();
+    const saveSigBtn = $("pdf-sign-save");
+    if (saveSigBtn) saveSigBtn.addEventListener("click", async function () {
+      if (!pad) return;
+      if (!padHasInk(pad)) { toast("画板上还是空的，先手绘或选张图"); return; }
+      const dataUrl = pad.toDataURL("image/png");
+      const list = await loadSavedSignatures();
+      list.push({ id: "sig_" + Date.now(), dataUrl: dataUrl, w: pad.width, h: pad.height });
+      await persistSaved(list);
+      renderSavedSignatures();
+      toast("已存入我的签章，下次可直接点击使用");
+    });
+      if (pad) {
+        const c = pad.getContext("2d");
+        c.lineWidth = penWidth; c.lineCap = "round"; c.strokeStyle = "#111";
+        let drawing = false, lx = 0, ly = 0;
+        pad.addEventListener("mousedown", function (e) { drawing = true; c.lineWidth = penWidth; const r = pad.getBoundingClientRect(); lx = e.clientX - r.left; ly = e.clientY - r.top; });
       pad.addEventListener("mousemove", function (e) {
         if (!drawing) return; const r = pad.getBoundingClientRect(); const x = e.clientX - r.left, y = e.clientY - r.top;
         c.beginPath(); c.moveTo(lx, ly); c.lineTo(x, y); c.stroke(); lx = x; ly = y;
@@ -1853,6 +2109,40 @@ window.PDFApp = (function () {
       c.drawImage(img, (pad.width - w) / 2, (pad.height - h) / 2, w, h);
     };
     img.src = dataUrl;
+  }
+
+  /* 把签名 PNG 合成到白底，去掉透明通道（alpha/SMask）。
+     透明签名经 pdf-lib embedPng 会写入 /SMask，作为 Stamp 注释外观流时
+     Adobe 常报"本页面存在错误"。白底不透明图无 SMask，Acrobat 最稳。 */
+  function flattenSigToWhite(pngBytes) {
+    return new Promise(function (resolve) {
+      let url;
+      try {
+        const blob = new Blob([pngBytes], { type: "image/png" });
+        url = URL.createObjectURL(blob);
+      } catch (e) { resolve(pngBytes); return; }
+      const img = new Image();
+      img.onload = function () {
+        try {
+          const c = document.createElement("canvas");
+          c.width = img.naturalWidth || img.width;
+          c.height = img.naturalHeight || img.height;
+          const ctx = c.getContext("2d");
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, c.width, c.height);
+          ctx.drawImage(img, 0, 0);
+          c.toBlob(function (b) {
+            if (!b) { URL.revokeObjectURL(url); resolve(pngBytes); return; }
+            const fr = new FileReader();
+            fr.onload = function () { URL.revokeObjectURL(url); resolve(new Uint8Array(fr.result)); };
+            fr.onerror = function () { URL.revokeObjectURL(url); resolve(pngBytes); };
+            fr.readAsArrayBuffer(b);
+          }, "image/png");
+        } catch (e) { URL.revokeObjectURL(url); resolve(pngBytes); }
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); resolve(pngBytes); };
+      img.src = url;
+    });
   }
 
   /* =====================================================================

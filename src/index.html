@@ -378,8 +378,26 @@
       <div class="sign-pad-wrap">
         <canvas id="pdf-sign-pad" width="320" height="140"></canvas>
       </div>
+      <div class="sign-controls">
+        <label class="sign-ctl">笔宽
+          <input type="range" id="pdf-sign-pen" min="1" max="12" value="2">
+          <span id="pdf-sign-pen-val">2</span>
+        </label>
+        <label class="sign-ctl">大小
+          <input type="range" id="pdf-sign-scale" min="40" max="250" value="100">
+          <span id="pdf-sign-scale-val">100%</span>
+        </label>
+        <label class="sign-ctl chk" title="取消勾选可保留透明背景，但部分阅读器可能提示页面错误">
+          <input type="checkbox" id="pdf-sign-white" checked> 白底（避免 Adobe 报错）
+        </label>
+      </div>
+      <div class="sign-saved-wrap">
+        <div class="sign-saved-title">我的签章（点击使用 · 右键删除）</div>
+        <div class="sign-saved-list" id="pdf-sign-saved"></div>
+      </div>
       <div class="modal-actions">
         <button id="pdf-sign-clear">清除手绘</button>
+        <button id="pdf-sign-save">存为常用</button>
         <button data-close>取消</button>
         <button class="primary" id="pdf-sign-ok">用于放置</button>
       </div>

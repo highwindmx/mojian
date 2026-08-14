@@ -17,6 +17,8 @@ pub fn run() {
             commands::list_supported_files,
             commands::read_config,
             commands::write_config,
+            commands::load_signatures,
+            commands::save_signatures,
             commands::get_initial_file,
             commands::register_file_associations,
             commands::get_file_association_state,
