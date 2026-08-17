@@ -7,6 +7,8 @@
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="vendor/reveal/reveal.css">
 <link rel="stylesheet" href="vendor/reveal/theme/white.css" id="reveal-theme">
+<!-- KaTeX 样式（离线自包含，字体在 vendor/katex/fonts） -->
+<link rel="stylesheet" href="vendor/katex/katex.min.css">
 </head>
 <body>
   <!-- ============================ 顶部应用栏 ============================ -->
@@ -46,8 +48,16 @@
 
   <!-- ============================ 编辑区 ============================ -->
   <div class="editor-wrap" id="editor-wrap">
+    <!-- Markdown 大纲侧栏（默认隐藏，工具栏「大纲」按钮切换；sticky 钉在左，长文档内部可滚） -->
+    <div class="md-outline hidden" id="md-outline">
+      <div class="md-outline-head">
+        <span>大纲</span>
+        <button type="button" id="md-outline-close" title="隐藏大纲">✕</button>
+      </div>
+      <div class="md-outline-list" id="md-outline-list"></div>
+    </div>
     <div class="editor" id="editor" contenteditable="true"
-         data-placeholder="在此输入内容，或把本地 .html / .md 文件拖进来…" spellcheck="false"></div>
+         data-placeholder="在此输入内容，或把本地 .html / .md 文件拖进来…" spellcheck="true"></div>
     <div class="source-view-wrap" id="source-view-wrap">
       <pre class="source-hl" id="source-hl" aria-hidden="true"><code></code></pre>
       <textarea class="source-view" id="source-view" spellcheck="false"></textarea>
@@ -427,6 +437,9 @@
   <!-- 编辑器依赖（marked / turndown），须在 app.js 之前加载 -->
   <script src="vendor/marked.min.js"></script>
   <script src="vendor/turndown.js"></script>
+  <!-- 公式 / 图表渲染（离线自包含；非编辑岛方案，仅在 Markdown 文档用到） -->
+  <script src="vendor/mermaid.min.js"></script>
+  <script src="vendor/katex/katex.min.js"></script>
   <!-- PDF 模块（须先于 app.js，使 window.PDFApp 在启动时可用） -->
   <script src="pdf.js"></script>
   <!-- 幻灯片演示引擎（reveal.js，UMD 全局 Reveal；仅 presentSlides 时用到） -->

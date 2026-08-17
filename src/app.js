@@ -92,6 +92,7 @@
     hr:         { name:"分割线", kind:"action", value:"hr", title:"插入分割线", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="12" x2="20" y2="12"/></svg>' },
     emoji:      { name:"表情", kind:"action", value:"emoji", title:"插入表情（Emoji）", label:'😀' },
     slides:     { name:"幻灯片", kind:"action", value:"slides", title:"以幻灯片演示（仅 Markdown 文档）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><circle cx="12" cy="16" r="1.5" fill="currentColor" stroke="none"/></svg>' },
+    outline:    { name:"大纲", kind:"action", value:"outline", title:"显示/隐藏 Markdown 大纲", label:'大纲', keep:true },
     find:       { name:"查找替换", kind:"action", value:"find", title:"查找 / 替换", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>' },
     zoomout:    { name:"缩小", kind:"action", value:"zoom-out", title:"缩小 (Ctrl+-)", label:'−', keep:true },
     zoomin:     { name:"放大", kind:"action", value:"zoom-in", title:"放大 (Ctrl+=)", label:'+', keep:true },
@@ -116,16 +117,26 @@
     "__divider__",
     "find",
     "__divider__",
-    "zoomout","ZOOMLABEL","zoomin","split","source","softwrap",
+    "zoomout","ZOOMLABEL","zoomin","outline","split","source","softwrap",
   ];
 
   /** 解析工具栏配置（缺省回退默认顺序），返回 { order, hidden } */
   function getToolbarConfig() {
     const t = appConfig.toolbar || {};
-    return {
-      order: Array.isArray(t.order) && t.order.length ? t.order : DEFAULT_ORDER.slice(),
-      hidden: (t.hidden && typeof t.hidden === "object") ? t.hidden : {},
-    };
+    let order;
+    if (Array.isArray(t.order) && t.order.length) {
+      order = t.order.slice();
+      // 合并新增的默认项：若用户此前保存过工具栏顺序（早于本次新增的 outline 等项），
+      // 老布局里没有这些新按钮 → 自动补到末尾，确保新功能对老用户可见。
+      // （被用户主动隐藏的项在 hidden 里，renderToolbar 仍会跳过，不会被强制显示。）
+      DEFAULT_ORDER.forEach(function (tok) {
+        if (!order.includes(tok)) order.push(tok);
+      });
+    } else {
+      order = DEFAULT_ORDER.slice();
+    }
+    const hidden = (t.hidden && typeof t.hidden === "object") ? t.hidden : {};
+    return { order: order, hidden: hidden };
   }
 
   /** 依据配置动态渲染工具栏（分组 / 缩放标签 / 显隐 / 可拖拽） */
@@ -400,6 +411,9 @@
   const sourceHl = document.getElementById("source-hl");
   const sourceHlCode = sourceHl ? sourceHl.querySelector("code") : null;
   const editorWrap = document.getElementById("editor-wrap");
+  const mdOutline = document.getElementById("md-outline");
+  const mdOutlineList = document.getElementById("md-outline-list");
+  const mdOutlineClose = document.getElementById("md-outline-close");
   const folderBtn = document.getElementById("open-folder");
   const filePathEl = document.getElementById("file-path");
 
@@ -610,6 +624,8 @@
   function restoreSnapshot(snapshot) {
     suppressInput = true;
     editor.innerHTML = snapshot.html;
+    refreshAfterRender();
+    scheduleOutline();
     setCaretOffset(snapshot.caret);
     lastWasCommand = true;
     updatePlaceholder();
@@ -1404,6 +1420,7 @@
   /** 解析并加载 HTML 文本到编辑区（剥离 script/on*，保留样式与标题） */
   function loadHtmlDocument(text) {
     editor.contentEditable = "true";
+    closeMdOutline();
     const doc = new DOMParser().parseFromString(text, "text/html");
     doc.querySelectorAll("script").forEach(function (s) { s.remove(); });
     stripOnAttributes(doc.documentElement);
@@ -1433,6 +1450,7 @@
   /** 加载 SVG 文件：左侧 editor 作为只读预览，右侧 source-view 作为可编辑源码，默认进入分栏 */
   function loadSvg(svgText) {
     editor.contentEditable = "false"; // 预览只读，编辑在右侧源码区进行
+    closeMdOutline();
     // 内联渲染（保留动画/渐变等），sanitizeHtmlString 已剔除 <script> 与 on* 属性
     editor.innerHTML = sanitizeHtmlString(svgText);
     sourceView.value = svgText;
@@ -1453,6 +1471,8 @@
       html = escapeHtml(mdText).replace(/\n/g, "<br>");
     }
     editor.innerHTML = html;
+    refreshAfterRender();
+    scheduleOutline();
     loadedHead = "";
     loadedTitle = "";
     document.title = "墨笺";
@@ -1474,8 +1494,160 @@
         codeBlockStyle: "fenced",
         bulletListMarker: "-",
       });
+      // 非编辑岛（Mermaid / KaTeX）回写为围栏代码块，保证往返零损失
+      turndownService.addRule("mdDynamicBlock", {
+        filter: function (node) {
+          return node.nodeName === "DIV" && node.classList && node.classList.contains("md-block");
+        },
+        replacement: function (content, node) {
+          const lang = node.getAttribute("data-md-lang") || "";
+          const src = (node.getAttribute("data-md-source") || "").replace(/\n+$/, "");
+          return "\n\n```" + lang + "\n" + src + "\n```\n\n";
+        },
+      });
     }
     return turndownService.turndown(editor.innerHTML);
+  }
+
+  /* ============================ Markdown 动态块（Mermaid / KaTeX 非编辑岛） ============================ */
+  let mermaidReady = false, mermaidSeq = 0;
+
+  /** 把 ```mermaid / ```math 围栏块渲染成只读岛；保存时由 turndown 规则还原为围栏块，往返零损失。
+      库未加载时保留原始 <pre><code> 退化为纯文本，不阻断编辑。 */
+  function renderMdDynamicBlocks(root) {
+    if (!root) return Promise.resolve();
+    const doc = root.ownerDocument || document;
+    // 清理 mermaid 历史遗留的临时节点：mermaid.render 会在 body 留下以 id 命名的临时元素，
+    // 解析失败时把 "Syntax error in text" 塞进去且不清空 → 错误框残留在界面。先清掉。
+    doc.querySelectorAll('[id^="mmd-"], [id^="dmmd-"]').forEach(function (el) {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    });
+    const blocks = root.querySelectorAll("pre > code");
+    const tasks = [];
+    blocks.forEach(function (code) {
+      const pre = code.parentNode;
+      if (!pre || pre.nodeName !== "PRE" || pre.__mdRendered) return;
+      const cls = code.className || "";
+      const m = cls.match(/language-([\w-]+)/);
+      const lang = m ? m[1].toLowerCase() : "";
+      if (lang !== "mermaid" && lang !== "math" && lang !== "katex") return;
+      const source = (code.textContent || "").trim(); // 去首尾空白，避免尾换行/首行空导致解析失败
+      const div = document.createElement("div");
+      div.className = "md-block md-" + lang;
+      div.setAttribute("data-md-lang", lang);
+      div.setAttribute("data-md-source", source);
+      div.contentEditable = "false";
+      pre.__mdRendered = true; // 立即标记，防止重入重复处理
+      if (lang === "mermaid" && window.mermaid) {
+        if (!mermaidReady) { try { window.mermaid.initialize({ startOnLoad: false, securityLevel: "loose" }); } catch (e) {} mermaidReady = true; }
+        const id = "mmd-" + (mermaidSeq++);
+        const cleanupMmd = function () {
+          ["d" + id, id].forEach(function (eid) {
+            const el = doc.getElementById(eid);
+            if (el && el.parentNode) el.parentNode.removeChild(el);
+          });
+        };
+        const fail = function (err) {
+          cleanupMmd();
+          div.textContent = source;
+          div.title = "Mermaid 渲染失败：" + (err && err.message ? err.message : String(err));
+          div.classList.add("md-block-error");
+          if (pre.parentNode) pre.parentNode.replaceChild(div, pre);
+        };
+        let p;
+        try {
+          p = window.mermaid.render(id, source);
+        } catch (e) {
+          fail(e);
+          return;
+        }
+        tasks.push(p.then(function (res) {
+          cleanupMmd();
+          div.innerHTML = res.svg || "";
+          if (pre.parentNode) pre.parentNode.replaceChild(div, pre);
+        }).catch(fail));
+      } else if ((lang === "math" || lang === "katex") && window.katex) {
+        try {
+          div.innerHTML = window.katex.renderToString(source, { displayMode: true, throwOnError: false });
+          if (pre.parentNode) pre.parentNode.replaceChild(div, pre);
+        } catch (e) {
+          div.textContent = source;
+          if (pre.parentNode) pre.parentNode.replaceChild(div, pre);
+        }
+      } else {
+        // 对应库缺失：撤销标记，保留原始 <pre><code> 不动
+        pre.__mdRendered = false;
+      }
+    });
+    return Promise.all(tasks).catch(function () {});
+  }
+
+  /** 关闭代码块 / 内联 code 的原生拼写检查，避免标识符被划红线 */
+  function applySpellcheckExceptions(root) {
+    if (!root) return;
+    root.querySelectorAll("pre, code").forEach(function (el) { el.spellcheck = false; });
+  }
+
+  /** 载入 / 同步后统一收尾：渲染动态块 + 关闭代码拼写 */
+  function refreshAfterRender() {
+    renderMdDynamicBlocks(editor).catch(function () {});
+    applySpellcheckExceptions(editor);
+  }
+
+  /* ============================ Markdown 大纲 ============================ */
+  let outlineTimer = null;
+  function scheduleOutline() {
+    if (outlineTimer) clearTimeout(outlineTimer);
+    outlineTimer = setTimeout(buildMdOutline, 250);
+  }
+  function closeMdOutline() {
+    if (editorWrap) editorWrap.classList.remove("outline-open");
+    if (mdOutline) mdOutline.classList.add("hidden");
+    const olBtn = toolbar.querySelector('[data-action="outline"]');
+    if (olBtn) olBtn.classList.remove("active");
+  }
+  function toggleMdOutline() {
+    if (!currentFile || currentFile.kind !== "markdown") { toast("大纲仅对 Markdown 文档可用"); return; }
+    const open = editorWrap.classList.toggle("outline-open");
+    if (mdOutline) mdOutline.classList.toggle("hidden", !open);
+    const olBtn = toolbar.querySelector('[data-action="outline"]');
+    if (olBtn) olBtn.classList.toggle("active", open);
+    if (open) buildMdOutline();
+  }
+  function buildMdOutline() {
+    if (!mdOutlineList) return;
+    const heads = editor ? editor.querySelectorAll("h1,h2,h3,h4,h5,h6") : [];
+    mdOutlineList.innerHTML = "";
+    if (!heads.length) {
+      const tip = document.createElement("div");
+      tip.className = "pdf-outline-empty";
+      tip.style.padding = "8px";
+      tip.textContent = "（文档无标题）";
+      mdOutlineList.appendChild(tip);
+      return;
+    }
+    heads.forEach(function (h, idx) {
+      const level = parseInt(h.tagName.substring(1), 10) || 1;
+      const a = document.createElement("a");
+      a.dataset.idx = String(idx);
+      a.style.paddingLeft = (8 + (level - 1) * 12) + "px";
+      a.textContent = h.textContent.trim() || ("H" + level);
+      a.title = a.textContent;
+      a.addEventListener("click", function () {
+        const list = editor.querySelectorAll("h1,h2,h3,h4,h5,h6");
+        const target = list[idx];
+        if (!target) return;
+        target.scrollIntoView({ block: "start" });
+        try {
+          const r = document.createRange(); r.setStart(target, 0); r.collapse(true);
+          const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+          editor.focus();
+        } catch (e) {}
+        mdOutlineList.querySelectorAll("a.active").forEach(function (x) { x.classList.remove("active"); });
+        a.classList.add("active");
+      });
+      mdOutlineList.appendChild(a);
+    });
   }
 
   /** 拼装完整 HTML 文档（源模板 head + 当前编辑内容） */
@@ -1861,7 +2033,8 @@
     // PDF 模式下，保存走 PDF 模块（写回旋转 / 备注）
     if (window.__pdfActive && window.PDFApp) { window.PDFApp.save(); return; }
     if (sourceMode) applySourceToEditor();
-    if (currentFile) {
+    // 仅当已有关联路径才写回；path 为 null（新建未保存的文档）走"另存为"。
+    if (currentFile && currentFile.path) {
       await saveFileWithContent(currentFile.path, currentFile.kind);
     } else {
       await saveFileAs();
@@ -1957,12 +2130,14 @@
     }
   }
 
-  /** 同步源码/分栏按钮高亮态 */
+  /** 同步源码/分栏/大纲按钮高亮态 */
   function setSourceBtnActive() {
     const srcBtn = toolbar.querySelector('[data-action="source"]');
     if (srcBtn) srcBtn.classList.toggle("active", sourceMode || splitMode);
     const spBtn = toolbar.querySelector('[data-action="split"]');
     if (spBtn) spBtn.classList.toggle("active", splitMode);
+    const olBtn = toolbar.querySelector('[data-action="outline"]');
+    if (olBtn) olBtn.classList.toggle("active", !!(editorWrap && editorWrap.classList.contains("outline-open")));
   }
 
   function enterSourceMode() {
@@ -2320,6 +2495,7 @@
       else if (action === "saveas") saveFileAs();
       else if (action === "export") exportHTML();
       else if (action === "slides") presentSlides();
+      else if (action === "outline") toggleMdOutline();
       else if (action === "clear") clearDraft();
       else if (action === "new") openNewDialog();
       else if (action === "zoom-in") zoomIn();
@@ -2381,6 +2557,7 @@
     scheduleAutosave();
     if (splitMode) scheduleSyncEditorToSource();
     scheduleStatus();
+    if (currentFile && currentFile.kind === "markdown") scheduleOutline();
   });
 
   /* 源码分栏：左渲染区 → 右源码（防抖写入，避免每键重绘） */
@@ -2466,6 +2643,7 @@
 
   editor.addEventListener("focus", updatePlaceholder);
   editor.addEventListener("blur", updatePlaceholder);
+  if (mdOutlineClose) mdOutlineClose.addEventListener("click", closeMdOutline);
 
   document.addEventListener("selectionchange", function () {
     updateToolbarState();
@@ -2556,14 +2734,17 @@
     }
     // 依据配置动态渲染工具栏（顺序 / 显隐由定制弹窗的 ↑/↓ 调整）
     renderToolbar();
-    // 启动不再自动恢复上次草稿内容，避免误以为"已打开文件"；
-    // 应用启动即空白新文档（标题显示"未打开文件"）。
+    // 启动即空白新文档，默认进入 Markdown 撰写模式（kind=markdown，path=null 待保存）。
+    // 不再以 currentFile=null 的"中性空白"启动，以便开箱即用 Markdown 的
+    // WYSIWYG 往返 / 大纲 / 围栏块(math,mermaid) 等能力；标题仍显示"未打开文件"。
+    currentFile = { path: null, kind: "markdown" };
     updatePlaceholder();
     history = [takeSnapshot()];
     historyIndex = 0;
     lastWasCommand = true;
     lastChangeTs = Date.now();
     updateToolbarState();
+    setStatus("已新建 Markdown 文档");
     setupDragDrop();
     bindEpubControls();
 

@@ -536,6 +536,70 @@
   }
   .editor ul, .editor ol { margin: 0.6em 0; padding-left: 1.6em; }
 
+  /* ============================ Markdown 动态块（非编辑岛：Mermaid / KaTeX） ============================ */
+  .md-block { margin: 1em 0; }
+  .md-mermaid {
+    background: var(--color-bg);
+    border: 0.5px solid var(--color-border);
+    border-radius: 6px;
+    padding: 12px;
+    overflow: auto;
+    text-align: center;
+  }
+  .md-mermaid svg { max-width: 100%; height: auto; display: inline-block; }
+  .md-math { overflow: auto; padding: 2px 0; }
+  .md-block[contenteditable="false"] { cursor: default; }
+  /* Mermaid 渲染失败兜底：显示原始源码 + 错误提示，绝不再泄漏 mermaid 自带的 "Syntax error" 框 */
+  .md-block.md-block-error {
+    text-align: left;
+    background: #fff5f5;
+    border: 1px dashed #e5484d;
+    border-radius: 6px;
+    padding: 10px 12px;
+    color: #b42318;
+    white-space: pre-wrap;
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  /* ============================ Markdown 大纲侧栏 ============================ */
+  .editor-wrap.outline-open { justify-content: flex-start; }
+  .editor-wrap.outline-open .editor { flex: 1 1 auto; min-width: 0; }
+  .editor-wrap.split.outline-open .editor,
+  .editor-wrap.split.outline-open .source-view-wrap { flex: 1 1 0; min-width: 0; }
+  .editor-wrap.source.outline-open .source-view-wrap { flex: 1 1 auto; min-width: 0; max-width: none; }
+  .md-outline {
+    flex: 0 0 220px;
+    align-self: flex-start;
+    position: sticky;
+    top: 8px;
+    max-height: calc(100% - 16px);
+    display: flex;
+    flex-direction: column;
+    background: var(--color-background-secondary);
+    border: 0.5px solid var(--color-border);
+    border-radius: var(--border-radius-md);
+    overflow: hidden;
+  }
+  .md-outline-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 10px; border-bottom: 0.5px solid var(--color-border);
+    font-weight: 500; font-size: 13px;
+  }
+  .md-outline-head button {
+    border: 0; background: transparent; cursor: pointer;
+    font-size: 13px; color: var(--color-text-secondary); padding: 0 4px;
+  }
+  .md-outline-list { overflow: auto; padding: 6px 4px; }
+  .md-outline-list a {
+    display: block; padding: 3px 8px; font-size: 13px; color: var(--color-text);
+    cursor: pointer; border-radius: 4px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .md-outline-list a:hover { background: var(--color-background-info); }
+  .md-outline-list a.active { background: var(--color-background-info); color: var(--color-text-info); font-weight: 500; }
+
   /* 源码视图文本域：替代编辑区显示原始源码。
      语法高亮由下方 .source-hl 叠加层呈现；开启高亮(.hl-on)后本框文字透明、仅露光标，露出彩色层。 */
   .source-view {
