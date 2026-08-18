@@ -287,11 +287,12 @@ window.PDFApp = (function () {
                        children: ["save-as-pdf", "export-img", "export-word"] },
     "tools-group":    { name: "其他工具", kind: "group", label: "其他工具", title: "水印 / 合并 / 拆分",
                        children: ["watermark", "merge", "split"] },
+    sidebar:        { name: "侧栏", action: "sidebar", label: "侧栏", title: "显示 / 隐藏左侧大纲 / 缩略图栏", keep: true },
   };
   /* 用户指定的初始顺序（备注按钮已移除；100% / 适合宽度 / 选择手型 默认隐藏，可在定制里开启；
    * 旋转展开为三个内联按钮；页码的上一页/下一页与页码输入框放在底部状态栏，不进工具栏） */
   const PDF_DEFAULT_ORDER = [
-    "open", "save", "save-as-group", "print", "close",
+    "open", "save", "save-as-group", "print", "close", "sidebar",
     "__divider__",
     "undo",
     "__divider__",
@@ -439,6 +440,8 @@ window.PDFApp = (function () {
     if (mm) { mm.textContent = mouseMode === "select" ? "选择" : "手型"; mm.classList.toggle("active", mouseMode === "hand"); }
     const nb = pdfToolbar.querySelector('[data-pdf-action="note"]');
     if (nb) nb.classList.toggle("active", noteMode);
+    const sb = pdfToolbar.querySelector('[data-pdf-action="sidebar"]');
+    if (sb) sb.classList.toggle("active", !isSidebarHidden());
     updateSaveState();
     updateUndoState();
   }
@@ -922,6 +925,7 @@ window.PDFApp = (function () {
     if (pdfToolbar) pdfToolbar.classList.remove("hidden");
     window.__pdfActive = true;
     renderPdfToolbar();   // 此时 app.js 的配置已加载完，按用户定制重建一次
+    applySidebarState();  // 应用上次记忆的侧栏显隐偏好
     updatePageInfo();
   }
 
@@ -2413,6 +2417,7 @@ window.PDFApp = (function () {
       case "save": save(); break;
       case "save-as": saveAs(); break;
       case "close": close(); break;
+      case "sidebar": togglePdfSidebar(); break;
     }
   }
   function toggleMouseMode() {
@@ -2420,6 +2425,29 @@ window.PDFApp = (function () {
     if (mainEl) mainEl.classList.toggle("hand-mode", mouseMode === "hand");
     const btn = pdfToolbar.querySelector('[data-pdf-action="mouse-mode"]');
     if (btn) { btn.textContent = mouseMode === "select" ? "选择" : "手型"; btn.classList.toggle("active", mouseMode === "hand"); }
+  }
+  function isSidebarHidden() {
+    const body = $("pdf-body");
+    return !!(body && body.classList.contains("sidebar-hidden"));
+  }
+  /* 依据 localStorage 偏好应用侧栏显隐（打开 PDF 时调用，按钮须已渲染） */
+  function applySidebarState() {
+    let hidden = false;
+    try { hidden = localStorage.getItem("pdfSidebarHidden") === "1"; } catch (e) {}
+    const body = $("pdf-body");
+    if (body) body.classList.toggle("sidebar-hidden", hidden);
+    const btn = pdfToolbar.querySelector('[data-pdf-action="sidebar"]');
+    if (btn) btn.classList.toggle("active", !hidden);
+  }
+  /* 切换侧栏显隐并记忆偏好（高亮态与「分栏」一致：可见=高亮） */
+  function togglePdfSidebar() {
+    const body = $("pdf-body");
+    if (!body) return;
+    const hidden = !body.classList.contains("sidebar-hidden");
+    body.classList.toggle("sidebar-hidden", hidden);
+    try { localStorage.setItem("pdfSidebarHidden", hidden ? "1" : "0"); } catch (e) {}
+    const btn = pdfToolbar.querySelector('[data-pdf-action="sidebar"]');
+    if (btn) btn.classList.toggle("active", !hidden);
   }
   async function openFileDialog() {
     let p;

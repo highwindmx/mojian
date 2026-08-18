@@ -1159,6 +1159,9 @@
     min-height: 0;
     overflow: hidden;
   }
+  /* 隐藏侧栏时连带隐藏拖拽条，主区域自动撑满（无侧栏=纯阅读视图） */
+  .pdf-body.sidebar-hidden .pdf-sidebar,
+  .pdf-body.sidebar-hidden .pdf-sidebar-resizer { display: none; }
   .pdf-sidebar {
     flex: 0 0 210px;
     display: flex;
