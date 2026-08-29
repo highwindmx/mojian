@@ -1404,6 +1404,75 @@
   }
 
   /** 将 HTML 文本中的 <style> 注入页面，使编辑区所见即所得 */
+  /** 把页面 CSS 限制到编辑区内（防止 body / * / #toolbar 等全局选择器污染整个应用外壳）。
+    用浏览器原生 CSSOM 解析后改写选择器，相比 @scope 能正确处理 @media/@keyframes/@font-face/@layer 等顶层规则；
+    解析失败则回退为原样注入（不阻断编辑）。 */
+  function scopeCss(rawCss) {
+    const css = String(rawCss || "");
+    if (!css.trim()) return css;
+    const style = document.createElement("style");
+    document.head.appendChild(style);
+    style.textContent = css;
+    let out = "", imports = "";
+    try {
+      const sheet = style.sheet;
+      if (!sheet) throw new Error("no sheet");
+      const rules = sheet.cssRules;
+      for (let i = 0; i < rules.length; i++) {
+        const rule = rules[i];
+        const t = rule.type;
+        if (t === CSSRule.STYLE_RULE) {
+          out += prefixSelector(rule.selectorText) + " { " + rule.style.cssText + " }\n";
+        } else if (rule.cssRules &&
+                   t !== CSSRule.KEYFRAMES_RULE &&
+                   t !== CSSRule.FONT_FACE_RULE) {
+          // 分组型 at-rule（@media / @supports / @container / @layer / 嵌套等）：
+          // 递归改写内层选择器，外层用 cssText 的头部原样保留。
+          let inner = "";
+          for (let j = 0; j < rule.cssRules.length; j++) {
+            inner += serializeScopedRule(rule.cssRules[j]) + "\n";
+          }
+          const head = rule.cssText.slice(0, rule.cssText.indexOf("{")).trim();
+          out += head + " {\n" + inner + "}\n";
+        } else {
+          // @import / @charset / @font-face / @keyframes 等：保持原样（全局、无害）。
+          // @import / @charset 必须位于样式表顶部，单独前置。
+          const txt = rule.cssText;
+          if (/^@import/i.test(txt) || /^@charset/i.test(txt)) imports += txt + "\n";
+          else out += txt + "\n";
+        }
+      }
+    } catch (e) {
+      document.head.removeChild(style);
+      return css; // 解析失败：回退原样注入
+    }
+    document.head.removeChild(style);
+    return imports + out;
+  }
+
+  function serializeScopedRule(rule) {
+    if (rule.type === CSSRule.STYLE_RULE) {
+      return prefixSelector(rule.selectorText) + " { " + rule.style.cssText + " }";
+    }
+    if (rule.cssRules && rule.type !== CSSRule.KEYFRAMES_RULE && rule.type !== CSSRule.FONT_FACE_RULE) {
+      let inner = "";
+      for (let j = 0; j < rule.cssRules.length; j++) inner += serializeScopedRule(rule.cssRules[j]) + "\n";
+      const head = rule.cssText.slice(0, rule.cssText.indexOf("{")).trim();
+      return head + " {\n" + inner + "}";
+    }
+    return rule.cssText; // @keyframes / @font-face 等保持原样
+  }
+
+  function prefixSelector(sel) {
+    return sel.split(",").map(function (s) {
+      s = s.trim();
+      if (!s) return s;
+      // html / :root / * 等文档级选择器加了 #editor 前缀也不会匹配（编辑区内无这些元素），
+      // 自然失效、不污染应用；标签 / 类 / id 选择器则被锁定在 #editor 内。
+      return "#editor " + s;
+    }).join(", ");
+  }
+
   function injectFileStyle(head) {
     const old = document.getElementById("file-style");
     if (old) old.remove();
@@ -1411,9 +1480,12 @@
     let css = "";
     head.querySelectorAll("style").forEach(function (s) { css += s.textContent + "\n"; });
     if (!css) return;
+    // 页面 CSS 经选择器前缀改写锁在 #editor 内，杜绝全局选择器污染应用外壳；
+    // 弹窗/遮罩覆盖菜单的问题另由 .editor 的 `contain: paint` 解决。
+    const scoped = scopeCss(css);
     const el = document.createElement("style");
     el.id = "file-style";
-    el.textContent = css;
+    el.textContent = scoped;
     document.head.appendChild(el);
   }
 

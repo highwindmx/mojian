@@ -469,6 +469,9 @@
     line-height: 1.7;
     font-size: 16px;
     overflow: hidden;         /* 兜底：内联 SVG 等超宽内容不会逃出白底卡片盖住主界面 */
+    /* 关键：使编辑区成为 fixed/absolute 后代的包含块并裁剪到卡片内，
+       防止被加载网页里的弹窗/遮罩（position:fixed）脱离编辑区覆盖顶部工具栏与菜单按钮 */
+    contain: paint;
   }
 
   .editor:focus {
