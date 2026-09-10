@@ -63,16 +63,16 @@
     prevfile:   { name:"上一个文件", kind:"action", value:"prevfile", title:"打开同目录下上一个受支持的文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>', keep:true },
     nextfile:   { name:"下一个文件", kind:"action", value:"nextfile", title:"打开同目录下下一个受支持的文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>', keep:true },
     save:       { name:"保存", kind:"action", value:"save", title:"保存（写回原文件）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>' },
-    saveas:     { name:"另存为", kind:"action", value:"saveas", title:"另存为…", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><polyline points="8 11 12 15 16 11"/><path d="M5 19h14"/></svg>' },
-    export:     { name:"导出", kind:"action", value:"export", title:"导出为自包含 HTML 文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 21V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/><polyline points="9 13 12 16 15 13"/><line x1="12" y1="16" x2="12" y2="9"/></svg>' },
+    saveas:     { name:"另存为", kind:"action", value:"saveas", title:"另存为…", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 21V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/><polyline points="9 13 12 16 15 13"/><line x1="12" y1="16" x2="12" y2="9"/></svg>' },
+    export:     { name:"导出", kind:"action", value:"export", title:"导出为自包含 HTML 文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><polyline points="8 11 12 15 16 11"/><path d="M5 19h14"/></svg>' },
     clear:      { name:"清空", kind:"action", value:"clear", title:"清空草稿", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>' },
     undo:       { name:"撤销", kind:"action", value:"undo", title:"撤销 (Ctrl+Z)", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>' },
     redo:       { name:"重做", kind:"action", value:"redo", title:"重做 (Ctrl+Y)", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg>' },
     bold:       { name:"加粗", kind:"cmd", value:"bold", title:"加粗 (Ctrl+B)", label:'<b>B</b>' },
     italic:     { name:"斜体", kind:"cmd", value:"italic", title:"斜体 (Ctrl+I)", label:'<i>I</i>' },
     underline:  { name:"下划线", kind:"cmd", value:"underline", title:"下划线 (Ctrl+U)", label:'<u>U</u>' },
-    forecolor:  { name:"文字颜色", kind:"action", value:"forecolor", title:"文字颜色（选中文字后点击取色）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16"/><path d="M12 4l-3.2 8h6.4L12 4z" fill="currentColor" stroke="none"/></svg>' },
-    backcolor:  { name:"背景颜色", kind:"action", value:"backcolor", title:"背景颜色 / 高亮（选中文字后点击取色）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v4h6V3" fill="#fde68a" stroke="none"/></svg>' },
+    forecolor:  { name:"文字颜色", kind:"action", value:"forecolor", title:"文字颜色（选中文字后点击取色）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><text x="12" y="16" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">A</text><line x1="5" y1="20" x2="9" y2="20" stroke="#ef4444" stroke-width="2.6"/><line x1="9.6" y1="20" x2="13.6" y2="20" stroke="#f59e0b" stroke-width="2.6"/><line x1="14.2" y1="20" x2="19" y2="20" stroke="#3b82f6" stroke-width="2.6"/></svg>' },
+    backcolor:  { name:"背景颜色", kind:"action", value:"backcolor", title:"背景颜色 / 高亮（选中文字后点击取色）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="13" width="15" height="4.5" rx="1.2" fill="#fde047" stroke="none"/><text x="12" y="17" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">A</text></svg>' },
     H1:         { name:"标题 1", kind:"block", value:"H1", title:"标题 1", label:'H1' },
     H2:         { name:"标题 2", kind:"block", value:"H2", title:"标题 2", label:'H2' },
     H3:         { name:"标题 3", kind:"block", value:"H3", title:"标题 3", label:'H3' },
@@ -103,7 +103,7 @@
   };
 
   const DEFAULT_ORDER = [
-    "new","open","prevfile","nextfile","save","saveas","export","slides","clear",
+    "new","open","prevfile","nextfile","save","saveas","export","clear",
     "__divider__",
     "undo","redo",
     "__divider__",
@@ -117,7 +117,7 @@
     "__divider__",
     "find",
     "__divider__",
-    "zoomout","ZOOMLABEL","zoomin","outline","split","source","softwrap",
+    "zoomout","ZOOMLABEL","zoomin","slides","outline","split","source","softwrap",
   ];
 
   /** 解析工具栏配置（缺省回退默认顺序），返回 { order, hidden } */
