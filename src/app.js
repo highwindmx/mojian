@@ -2171,7 +2171,11 @@
     // 仅缩放编辑区"白底画布"的内容（.editor 与 .source-view 元素级 zoom），
     // 工具栏、按钮等界面控件保持原尺寸不变。Chromium / WebView2 支持元素级 zoom。
     if (editor) editor.style.zoom = String(currentZoom);
-    const sv = document.getElementById("source-view");
+    // 源码栏要把 zoom 加在容器 .source-view-wrap 上，而不是 textarea 本身：
+    // 源码栏是「透明 textarea + .source-hl 高亮叠加层」双层结构，若只 zoom textarea，
+    // 两层坐标空间差 z 倍 → 文字视觉大小/换行点/滚动偏移与下层高亮卡片错位，
+    // 内容会溢出白底卡片（缩放≠100% 时切源码必现）。zoom 容器则两层同步缩放、天然对齐。
+    const sv = document.getElementById("source-view-wrap");
     if (sv) sv.style.zoom = String(currentZoom);
     const zl = document.getElementById("zoom-label");
     if (zl) zl.textContent = Math.round(currentZoom * 100) + "%";
@@ -2816,7 +2820,6 @@
     lastWasCommand = true;
     lastChangeTs = Date.now();
     updateToolbarState();
-    setStatus("已新建 Markdown 文档");
     setupDragDrop();
     bindEpubControls();
 
@@ -2850,7 +2853,13 @@
     // Tauri 不会自动打开，这里主动读取并在启动后加载该文件。
     try {
       const initialFile = await tauriInvoke("get_initial_file");
-      if (initialFile) openFileWithPath(initialFile);
+      if (initialFile) {
+        openFileWithPath(initialFile);
+      } else {
+        // 仅在无文件关联传入时提示「新建」；有启动文件（如双击 PDF）时不提示，
+        // 避免打开 PDF/HTML 前先弹出误导性的「已新建 Markdown 文档」
+        setStatus("已新建 Markdown 文档");
+      }
     } catch (e) {}
   }
 
