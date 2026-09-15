@@ -960,6 +960,123 @@
   function insertHr() { insertHTML("<hr>"); }
 
   /* =====================================================================
+   * 表格行/列编辑：光标进入表格时显示浮动工具条，支持增/删 行、列
+   * 依赖 serializeMarkdown 的 gfmTable 规则，改动可被写回 .md
+   * ===================================================================== */
+  const tableEditBar = document.createElement("div");
+  tableEditBar.className = "table-edit-bar";
+  tableEditBar.innerHTML =
+    '<button data-tbl="row-above" title="在上方插入行">＋行↑</button>' +
+    '<button data-tbl="row-below" title="在下方插入行">＋行↓</button>' +
+    '<button data-tbl="row-del" title="删除本行">－行</button>' +
+    '<span class="sep"></span>' +
+    '<button data-tbl="col-left" title="在左侧插入列">＋列←</button>' +
+    '<button data-tbl="col-right" title="在右侧插入列">＋列→</button>' +
+    '<button data-tbl="col-del" title="删除本列">－列</button>';
+  document.body.appendChild(tableEditBar);
+
+  function cellFromSelection() {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+    let n = sel.anchorNode;
+    while (n && n.nodeType !== 1) n = n.parentNode;
+    return n ? n.closest("td,th") : null;
+  }
+
+  function placeCaretIn(el) {
+    if (!el) return;
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    r.collapse(true);
+    const s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(r);
+  }
+
+  function tblInsertRow(offset) {
+    const cell = cellFromSelection();
+    if (!cell) return;
+    const tr = cell.closest("tr");
+    if (!tr || !tr.parentNode) return;
+    const cols = tr.cells.length;
+    const newTr = document.createElement("tr");
+    for (let i = 0; i < cols; i++) newTr.appendChild(document.createElement("td"));
+    tr.parentNode.insertBefore(newTr, offset < 0 ? tr : tr.nextSibling);
+    placeCaretIn(newTr.cells[cell.cellIndex] || newTr.firstElementChild);
+  }
+
+  function tblDeleteRow() {
+    const cell = cellFromSelection();
+    if (!cell) return;
+    const tr = cell.closest("tr");
+    if (!tr || !tr.parentNode) return;
+    if (tr.parentNode.querySelectorAll("tr").length <= 1) return; // 至少保留一行
+    const idx = cell.cellIndex;
+    const sib = tr.previousElementSibling || tr.nextElementSibling;
+    tr.parentNode.removeChild(tr);
+    if (sib) placeCaretIn(sib.cells[Math.min(idx, sib.cells.length - 1)] || sib);
+  }
+
+  function tblInsertCol(offset) {
+    const cell = cellFromSelection();
+    if (!cell) return;
+    const table = cell.closest("table");
+    if (!table) return;
+    const idx = cell.cellIndex + (offset < 0 ? 0 : 1);
+    const rows = table.rows;
+    for (let i = 0; i < rows.length; i++) {
+      const tr = rows[i];
+      const isHeader = tr.parentElement.tagName === "THEAD" ||
+        (i === 0 && !table.querySelector("thead"));
+      const td = document.createElement(isHeader ? "th" : "td");
+      if (idx >= tr.cells.length) tr.appendChild(td);
+      else tr.insertBefore(td, tr.cells[idx]);
+    }
+    const row = cell.closest("tr");
+    if (row && row.cells[idx]) placeCaretIn(row.cells[idx]);
+  }
+
+  function tblDeleteCol() {
+    const cell = cellFromSelection();
+    if (!cell) return;
+    const table = cell.closest("table");
+    if (!table) return;
+    const idx = cell.cellIndex;
+    const rows = table.rows;
+    if (rows.length && rows[0].cells.length <= 1) return; // 至少保留一列
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i].cells[idx]) rows[i].deleteCell(idx);
+    }
+    const row = cell.closest("tr");
+    if (row && row.cells.length) {
+      const ni = Math.min(idx, row.cells.length - 1);
+      placeCaretIn(row.cells[ni]);
+    }
+  }
+
+  function updateTableEditBar() {
+    const inMd = currentFile && currentFile.kind === "markdown";
+    const cell = (editor && editor.isContentEditable && inMd) ? cellFromSelection() : null;
+    tableEditBar.classList.toggle("show", !!cell);
+  }
+
+  tableEditBar.addEventListener("click", function (e) {
+    const btn = e.target.closest("button[data-tbl]");
+    if (!btn) return;
+    switch (btn.getAttribute("data-tbl")) {
+      case "row-above": tblInsertRow(-1); break;
+      case "row-below": tblInsertRow(1); break;
+      case "row-del": tblDeleteRow(); break;
+      case "col-left": tblInsertCol(-1); break;
+      case "col-right": tblInsertCol(1); break;
+      case "col-del": tblDeleteCol(); break;
+    }
+    updateTableEditBar();
+  });
+
+  document.addEventListener("selectionchange", updateTableEditBar);
+
+  /* =====================================================================
    * 表情输入（HTML / Markdown 工具栏）
    * ===================================================================== */
   const EMOJIS = [
@@ -1531,6 +1648,30 @@
     updateToolbarState();
   }
 
+  /** 配置 marked：屏蔽 GFM 删除线对 ~ 的误判。
+      医学/科学文本常用 ~ 表示“约/范围”（如 1.2~1.5 cm），同一段落出现两处 ~ 时，
+      marked 的 ~~ 删除线会把中间整段渲染成 <del>，导致正常内容被加删除线。
+      用 inline 扩展把 ~ 当作普通字符，彻底规避误删；标题/加粗/代码/表格等不受影响。 */
+  let markedConfigured = false;
+  function applyMarkedConfig() {
+    if (markedConfigured) return;
+    if (!window.marked || !window.marked.use) return;
+    window.marked.use({
+      extensions: [{
+        name: "notilde",
+        level: "inline",
+        start: function (src) { const i = src.indexOf("~"); return i < 0 ? undefined : i; },
+        tokenizer: function (src) {
+          const m = /^~+/.exec(src);
+          if (m) return { type: "notilde", raw: m[0], text: m[0] };
+          return false;
+        },
+        renderer: function (token) { return token.text; }
+      }]
+    });
+    markedConfigured = true;
+  }
+
   function loadMarkdown(mdText) {
     editor.contentEditable = "true";
     let html;
@@ -1557,6 +1698,31 @@
     scheduleAutosave();
   }
 
+  /** 把 <table> 序列化为 GFM 表格（| a | b |\n|---|---|）。turndown 核心不支持表格，
+      不注册此规则则保存时表格结构会被压成零散文本、丢失行列关系。 */
+  function tableToMd(node) {
+    const rows = Array.prototype.slice.call(node.rows || []);
+    if (!rows.length) return "";
+    const clean = function (cell) {
+      return (cell.textContent || "").replace(/\r?\n/g, " ").replace(/\|/g, "\\|").trim();
+    };
+    const numCols = rows.reduce(function (m, tr) { return Math.max(m, tr.cells.length); }, 0);
+    if (!numCols) return "";
+    const lines = [];
+    rows.forEach(function (tr, ri) {
+      const cells = Array.prototype.slice.call(tr.cells || []);
+      const vals = [];
+      for (let i = 0; i < numCols; i++) vals.push(clean(cells[i] || { textContent: "" }));
+      lines.push("| " + vals.join(" | ") + " |");
+      if (ri === 0) {
+        const sep = [];
+        for (let i = 0; i < numCols; i++) sep.push("---");
+        lines.push("| " + sep.join(" | ") + " |");
+      }
+    });
+    return "\n" + lines.join("\n") + "\n";
+  }
+
   /** 把编辑区内容序列化为 Markdown 文本（turndown） */
   function serializeMarkdown() {
     if (!window.TurndownService) return editor.innerHTML; // 退化
@@ -1576,6 +1742,11 @@
           const src = (node.getAttribute("data-md-source") || "").replace(/\n+$/, "");
           return "\n\n```" + lang + "\n" + src + "\n```\n\n";
         },
+      });
+      // GFM 表格：整表直接转写，避免 turndown 默认行为丢失结构
+      turndownService.addRule("gfmTable", {
+        filter: "table",
+        replacement: function (content, node) { return tableToMd(node); },
       });
     }
     return turndownService.turndown(editor.innerHTML);
@@ -2171,10 +2342,7 @@
     // 仅缩放编辑区"白底画布"的内容（.editor 与 .source-view 元素级 zoom），
     // 工具栏、按钮等界面控件保持原尺寸不变。Chromium / WebView2 支持元素级 zoom。
     if (editor) editor.style.zoom = String(currentZoom);
-    // 源码栏要把 zoom 加在容器 .source-view-wrap 上，而不是 textarea 本身：
-    // 源码栏是「透明 textarea + .source-hl 高亮叠加层」双层结构，若只 zoom textarea，
-    // 两层坐标空间差 z 倍 → 文字视觉大小/换行点/滚动偏移与下层高亮卡片错位，
-    // 内容会溢出白底卡片（缩放≠100% 时切源码必现）。zoom 容器则两层同步缩放、天然对齐。
+    // 源码栏把 zoom 加在容器 .source-view-wrap 上（textarea 铺满容器，zoom 容器即同步缩放文本域）。
     const sv = document.getElementById("source-view-wrap");
     if (sv) sv.style.zoom = String(currentZoom);
     const zl = document.getElementById("zoom-label");
@@ -2234,6 +2402,7 @@
     if (editorWrap) editorWrap.classList.add("source");
     toolbar.classList.add("source-mode");
     setSourceBtnActive();
+    sourceFind = null;
     sourceView.focus();
     highlightSource();
   }
@@ -2247,6 +2416,7 @@
     if (editorWrap) editorWrap.classList.remove("source");
     toolbar.classList.remove("source-mode");
     setSourceBtnActive();
+    sourceFind = null;
     editor.focus();
   }
 
@@ -2265,6 +2435,7 @@
     toolbar.classList.add("split");
     splitMode = true;
     setSourceBtnActive();
+    sourceFind = null;
     highlightSource();
     saveConfig({ sourceSplit: true });
   }
@@ -2277,6 +2448,7 @@
     sourceView.style.display = "none";
     splitMode = false;
     setSourceBtnActive();
+    sourceFind = null;
     saveConfig({ sourceSplit: false });
   }
 
@@ -2297,10 +2469,6 @@
     if (sourceView) {
       sourceView.wrap = softWrap ? "soft" : "off";
       sourceView.classList.toggle("wrap-off", !softWrap);
-    }
-    if (sourceHl) {
-      sourceHl.classList.toggle("wrap-off", !softWrap);
-      syncHlScroll();
     }
     const b = toolbar.querySelector('[data-action="softwrap"]');
     if (b) b.classList.toggle("active", softWrap);
@@ -2415,9 +2583,28 @@
   const findInput = document.getElementById("find-input");
   const replaceInput = document.getElementById("replace-input");
   const findCase = document.getElementById("find-case");
-  let findState = null; // { nodes, query, idx, caseSensitive }
+  let renderFind = null;    // 渲染区匹配：{ matches:[{node,start,end}], query, cs, idx }
+  let sourceFind = null;    // 源码区匹配：{ matches:[pos...], query, cs, idx }
+  let lastFindSide = "editor"; // 分栏模式：查找/替换跟随当前聚焦面板（editor 渲染区 / source 源码）
+
+  // 编辑内容会移动匹配位置，使已构建的查找结果失效
+  function invalidateFind() { renderFind = null; sourceFind = null; }
+
+  // 把命中的 range 精确垂直居中到渲染区滚动容器（.editor-wrap）
+  function scrollRangeToCenter(range) {
+    const wrap = editor.parentElement;
+    if (!wrap) return;
+    const rect = range.getBoundingClientRect();
+    const wrapRect = wrap.getBoundingClientRect();
+    const targetY = rect.top - wrapRect.top + rect.height / 2; // 命中点在容器内的相对位置
+    wrap.scrollTop = Math.max(0, wrap.scrollTop + targetY - wrap.clientHeight / 2);
+  }
 
   function openFindBar() {
+    // 先记录当前聚焦的面板（在焦点转移给查找框之前），用于分栏模式跟随鼠标所在侧
+    const ae = document.activeElement;
+    if (ae === sourceView) lastFindSide = "source";
+    else if (ae === editor || (editor && editor.contains(ae))) lastFindSide = "editor";
     if (findBar) {
       // 顶部浮动：精确贴在工具栏底边下方（工具栏高度随换行/主题变化，按真实位置算）
       const tb = document.getElementById("toolbar");
@@ -2433,100 +2620,213 @@
     if (findBar) findBar.classList.add("hidden");
     const sel = window.getSelection();
     if (sel) sel.removeAllRanges();
-    findState = null;
+    renderFind = null;
+    sourceFind = null;
   }
-  function collectTextNodes() {
+  /* ---------- 渲染区查找：遍历所有文本节点，记录每一处出现，支持上/下翻 ---------- */
+  function buildRenderMatches(q, cs) {
+    const out = [];
     const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, null);
-    const nodes = [];
     let n;
     while ((n = walker.nextNode())) {
-      if (n.textContent.length) nodes.push(n);
+      if (!n.textContent) continue;
+      const text = cs ? n.textContent : n.textContent.toLowerCase();
+      const needle = cs ? q : q.toLowerCase();
+      let from = 0, p;
+      while ((p = text.indexOf(needle, from)) !== -1) {
+        out.push({ node: n, start: p, end: p + q.length });
+        from = p + q.length;
+      }
     }
-    return nodes;
+    return out;
+  }
+  function selectAndCenter(r) {
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    const range = document.createRange();
+    range.setStart(r.node, r.start);
+    range.setEnd(r.node, r.end);
+    sel.addRange(range);
+    scrollRangeToCenter(range);
+  }
+  function stepRender(forward) {
+    if (!renderFind || !renderFind.matches.length) return -1;
+    const m = renderFind.matches;
+    let ni = renderFind.idx < 0 ? (forward ? -1 : 0) : renderFind.idx;
+    ni = forward ? ni + 1 : ni - 1;
+    if (ni >= m.length) ni = 0;
+    if (ni < 0) ni = m.length - 1;
+    return ni;
   }
   function doFind(forward) {
+    if (sourceMode) { doFindSource(forward); return; }
+    if (splitMode && lastFindSide === "source") { doFindSource(forward); return; }
     if (!findInput) return;
     const q = findInput.value;
     if (!q) return;
-    const caseSensitive = !!(findCase && findCase.checked);
-    if (!findState || findState.query !== q || findState.caseSensitive !== caseSensitive) {
-      findState = { nodes: collectTextNodes(), query: q, idx: -1, caseSensitive };
+    const cs = !!(findCase && findCase.checked);
+    if (!renderFind || renderFind.query !== q || renderFind.cs !== cs) {
+      renderFind = { matches: buildRenderMatches(q, cs), query: q, cs: cs, idx: -1 };
     }
-    const nodes = findState.nodes;
-    if (!nodes.length) { setStatus("未找到：" + q); return; }
-    let start = forward ? findState.idx + 1 : findState.idx - 1;
-    if (start >= nodes.length) start = 0;
-    if (start < 0) start = nodes.length - 1;
-    for (let i = 0; i < nodes.length; i++) {
-      const ni = (start + i) % nodes.length;
-      const node = nodes[ni];
-      const text = caseSensitive ? node.textContent : node.textContent.toLowerCase();
-      const ql = caseSensitive ? q : q.toLowerCase();
-      const pos = text.indexOf(ql);
-      if (pos !== -1) {
-        findState.idx = ni;
-        const range = document.createRange();
-        range.setStart(node, pos);
-        range.setEnd(node, pos + q.length);
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
-        if (node.parentElement && node.parentElement.scrollIntoView) {
-          node.parentElement.scrollIntoView({ block: "nearest" });
-        }
-        setStatus("匹配：" + (ni + 1) + " / " + nodes.length);
-        return;
-      }
-    }
-    setStatus("未找到：" + q);
+    if (!renderFind.matches.length) { setStatus("未找到：" + q); return; }
+    const ni = stepRender(forward);
+    renderFind.idx = ni;
+    selectAndCenter(renderFind.matches[ni]);
+    setStatus("匹配：" + (ni + 1) + " / " + renderFind.matches.length);
   }
   function replaceCurrent() {
-    if (!findState || findState.idx < 0) {
-      doFind(true);
-      if (!findState || findState.idx < 0) return;
-    }
-    const node = findState.nodes[findState.idx];
-    const q = findState.query;
+    if (sourceMode) { replaceCurrentSource(); return; }
+    if (splitMode && lastFindSide === "source") { replaceCurrentSource(); return; }
+    if (!renderFind || renderFind.idx < 0) { doFind(true); if (!renderFind || renderFind.idx < 0) return; }
+    const r = renderFind.matches[renderFind.idx];
+    const q = renderFind.query;
     const repl = replaceInput ? replaceInput.value : "";
+    const node = r.node;
     const text = node.textContent;
-    const pos = findState.caseSensitive ? text.indexOf(q) : text.toLowerCase().indexOf(q.toLowerCase());
-    if (pos === -1) return;
     const before = editor.innerHTML;
-    node.textContent = text.slice(0, pos) + repl + text.slice(pos + q.length);
+    node.textContent = text.slice(0, r.start) + repl + text.slice(r.end);
     if (editor.innerHTML !== before) commitHistory();
     lastWasCommand = true;
+    const cs = renderFind.cs;
+    renderFind = { matches: buildRenderMatches(q, cs), query: q, cs: cs, idx: renderFind.idx };
     setStatus("已替换 1 处");
     doFind(true);
   }
   function replaceAll() {
+    if (sourceMode) { replaceAllSource(); return; }
+    if (splitMode && lastFindSide === "source") { replaceAllSource(); return; }
     const q = findInput ? findInput.value : "";
     if (!q) return;
-    const caseSensitive = !!(findCase && findCase.checked);
+    const cs = !!(findCase && findCase.checked);
     const repl = replaceInput ? replaceInput.value : "";
-    const nodes = collectTextNodes();
-    let count = 0;
+    const matches = buildRenderMatches(q, cs);
+    if (!matches.length) { setStatus("未找到：" + q); return; }
     const before = editor.innerHTML;
-    nodes.forEach(function (node) {
-      let text = node.textContent;
-      let idx;
-      if (caseSensitive) {
-        while ((idx = text.indexOf(q)) !== -1) {
-          text = text.slice(0, idx) + repl + text.slice(idx + q.length);
-          count++;
-        }
-      } else {
-        const ql = q.toLowerCase();
-        while ((idx = text.toLowerCase().indexOf(ql)) !== -1) {
-          text = text.slice(0, idx) + repl + text.slice(idx + q.length);
-          count++;
-        }
-      }
-      node.textContent = text;
+    // 按节点分组，组内从后往前替换，避免偏移错位
+    const byNode = {};
+    matches.forEach(function (m) { (byNode[m.node] || (byNode[m.node] = [])).push(m); });
+    let count = 0;
+    Object.keys(byNode).forEach(function (key) {
+      const list = byNode[key].slice().sort(function (a, b) { return b.start - a.start; });
+      let text = list[0].node.textContent;
+      list.forEach(function (m) {
+        text = text.slice(0, m.start) + repl + text.slice(m.end);
+        count++;
+      });
+      list[0].node.textContent = text;
     });
     if (editor.innerHTML !== before) commitHistory();
     lastWasCommand = true;
     setStatus("已替换 " + count + " 处");
-    findState = null;
+    renderFind = null;
+  }
+
+  /* ---------- 源码/分栏视图查找：直接操作 textarea 文本，记录每处字符位置 ---------- */
+  // 用镜像 div 精确计算 caret 在 textarea 内的垂直像素位置（考虑长行自动换行撑出多视觉行）
+  function caretTopInTextarea(ta, pos) {
+    const div = document.createElement("div");
+    const s = getComputedStyle(ta);
+    const copy = [
+      "boxSizing", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+      "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
+      "fontFamily", "fontSize", "fontWeight", "fontStyle", "letterSpacing",
+      "lineHeight", "textTransform", "wordSpacing", "textIndent"
+    ];
+    copy.forEach(function (p) { div.style[p] = s[p]; });
+    div.style.position = "absolute";
+    div.style.visibility = "hidden";
+    div.style.whiteSpace = "pre-wrap";
+    div.style.overflowWrap = "break-word";
+    div.style.wordBreak = "break-word";
+    div.style.height = "auto";
+    div.style.width = ta.clientWidth + "px";
+    div.style.borderWidth = "0";
+    div.textContent = ta.value.slice(0, pos);
+    document.body.appendChild(div);
+    const h = div.getBoundingClientRect().height;
+    const padB = parseFloat(s.paddingBottom) || 0;
+    const caretY = h - padB; // 相对 textarea 内容顶部的偏移
+    document.body.removeChild(div);
+    return caretY;
+  }
+  function scrollSourceToPos(pos) {
+    if (!sourceView) return;
+    const caretY = caretTopInTextarea(sourceView, pos);
+    sourceView.scrollTop = Math.max(0, caretY - sourceView.clientHeight / 2);
+  }
+  function buildSourceMatches(q, cs) {
+    const text = sourceView.value;
+    const hay = cs ? text : text.toLowerCase();
+    const needle = cs ? q : q.toLowerCase();
+    const out = [];
+    let from = 0, p;
+    while ((p = hay.indexOf(needle, from)) !== -1) { out.push(p); from = p + needle.length; }
+    return out;
+  }
+  function stepSource(forward) {
+    if (!sourceFind || !sourceFind.matches.length) return -1;
+    const m = sourceFind.matches;
+    let ni = sourceFind.idx < 0 ? (forward ? -1 : 0) : sourceFind.idx;
+    ni = forward ? ni + 1 : ni - 1;
+    if (ni >= m.length) ni = 0;
+    if (ni < 0) ni = m.length - 1;
+    return ni;
+  }
+  function doFindSource(forward) {
+    if (!findInput || !sourceView) return;
+    const q = findInput.value;
+    if (!q) return;
+    const cs = !!(findCase && findCase.checked);
+    if (!sourceFind || sourceFind.query !== q || sourceFind.cs !== cs) {
+      sourceFind = { matches: buildSourceMatches(q, cs), query: q, cs: cs, idx: -1 };
+    }
+    if (!sourceFind.matches.length) { setStatus("源码中未找到：" + q); return; }
+    const ni = stepSource(forward);
+    sourceFind.idx = ni;
+    const pos = sourceFind.matches[ni];
+    sourceView.focus();
+    try { sourceView.setSelectionRange(pos, pos + q.length); } catch (e) {}
+    scrollSourceToPos(pos);
+    setStatus("源码匹配：" + (ni + 1) + " / " + sourceFind.matches.length);
+  }
+  function replaceCurrentSource() {
+    if (!sourceFind || sourceFind.idx < 0) { doFindSource(true); if (!sourceFind || sourceFind.idx < 0) return; }
+    const q = sourceFind.query;
+    const cs = sourceFind.cs;
+    const repl = replaceInput ? replaceInput.value : "";
+    const pos = sourceFind.matches[sourceFind.idx];
+    const text = sourceView.value;
+    const next = text.slice(0, pos) + repl + text.slice(pos + q.length);
+    suppressSourceInput = true;
+    sourceView.value = next;
+    highlightSource();
+    const oldIdx = sourceFind.idx;
+    sourceFind = { matches: buildSourceMatches(q, cs), query: q, cs: cs, idx: oldIdx };
+    const np = sourceFind.matches[oldIdx] !== undefined ? sourceFind.matches[oldIdx] : -1;
+    if (np >= 0) {
+      sourceView.focus();
+      try { sourceView.setSelectionRange(np, np + q.length); } catch (e) {}
+      scrollSourceToPos(np);
+    }
+    setStatus("源码已替换 1 处");
+    doFindSource(true);
+  }
+  function replaceAllSource() {
+    const q = findInput ? findInput.value : "";
+    if (!q) return;
+    const cs = !!(findCase && findCase.checked);
+    const repl = replaceInput ? replaceInput.value : "";
+    const text = sourceView.value;
+    const hay = cs ? text : text.toLowerCase();
+    const needle = cs ? q : q.toLowerCase();
+    let out = "", i = 0, count = 0, p;
+    while ((p = hay.indexOf(needle, i)) !== -1) { out += text.slice(i, p) + repl; i = p + needle.length; count++; }
+    out += text.slice(i);
+    suppressSourceInput = true;
+    sourceView.value = out;
+    highlightSource();
+    sourceFind = null;
+    setStatus("源码已替换 " + count + " 处");
   }
 
   if (findBar) {
@@ -2542,6 +2842,9 @@
       if (e.key === "Enter") { e.preventDefault(); replaceCurrent(); }
     });
   }
+  // 分栏模式：记录当前聚焦的面板，使查找/替换跟随鼠标所在侧（左渲染区 / 右源码）
+  if (editor) editor.addEventListener("focus", function () { lastFindSide = "editor"; });
+  if (sourceView) sourceView.addEventListener("focus", function () { lastFindSide = "source"; });
 
   toolbar.addEventListener("click", function (e) {
     const btn = e.target.closest("button");
@@ -2631,6 +2934,7 @@
     recordInput();
     updatePlaceholder();
     scheduleAutosave();
+    invalidateFind(); // 编辑后已构建的查找结果失效
     if (splitMode) scheduleSyncEditorToSource();
     scheduleStatus();
     if (currentFile && currentFile.kind === "markdown") scheduleOutline();
@@ -2688,22 +2992,9 @@
     return null;
   }
   function highlightSource() {
-    if (!sourceView || !sourceHl || !sourceHlCode) return;
-    if (sourceView.style.display === "none") return;
-    if (!window.hljs) return; // 库未加载：保持纯文本，不加 hl-on
-    const code = sourceView.value;
-    const lang = highlightLanguage();
-    let html = "";
-    try {
-      html = lang
-        ? window.hljs.highlight(code, { language: lang }).value
-        : window.hljs.highlightAuto(code).value;
-    } catch (e) {
-      html = "";
-    }
-    sourceHlCode.innerHTML = html + (code.endsWith("\n") ? "\n" : "");
-    sourceView.classList.add("hl-on");
-    syncHlScroll();
+    // 源码视图已改为单层可见 textarea，不再叠加语法高亮层。
+    // 保留此函数为 no-op 以兼容既有调用点（scheduleHighlight / 模式切换），避免残留 hl-on/旧高亮造成"两层文字"。
+    return;
   }
   function scheduleHighlight() {
     if (hlTimer) clearTimeout(hlTimer);
@@ -2712,6 +3003,7 @@
 
   sourceView.addEventListener("input", function () {
     if (suppressSourceInput) { suppressSourceInput = false; return; }
+    invalidateFind(); // 内容已变，旧匹配位置失效（源码/渲染两侧均重置）
     if (splitMode) scheduleSyncSourceToEditor();
     scheduleHighlight();
   });
@@ -2814,6 +3106,7 @@
     // 不再以 currentFile=null 的"中性空白"启动，以便开箱即用 Markdown 的
     // WYSIWYG 往返 / 大纲 / 围栏块(math,mermaid) 等能力；标题仍显示"未打开文件"。
     currentFile = { path: null, kind: "markdown" };
+    applyMarkedConfig(); // 屏蔽 GFM 删除线对医学文本 ~ 范围的误判（必须在首次 marked.parse 前生效）
     updatePlaceholder();
     history = [takeSnapshot()];
     historyIndex = 0;
