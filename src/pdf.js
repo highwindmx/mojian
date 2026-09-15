@@ -289,7 +289,8 @@ window.PDFApp = (function () {
                        children: ["watermark", "merge", "split"] },
     sidebar:        { name: "侧栏", action: "sidebar", label: "侧栏", title: "显示 / 隐藏左侧大纲 / 缩略图栏", keep: true },
   };
-  /* 用户指定的初始顺序（备注按钮已移除；100% / 适合宽度 / 选择手型 默认隐藏，可在定制里开启；
+  /* 用户指定的初始顺序（备注按钮已移除；100% / 适合宽度 默认隐藏，可在定制里开启；
+   * 手型模式切换（选择/手型）默认显示，便于拖拽平移浏览；
    * 旋转展开为三个内联按钮；页码的上一页/下一页与页码输入框放在底部状态栏，不进工具栏） */
   const PDF_DEFAULT_ORDER = [
     "open", "save", "save-as-group", "print", "close", "sidebar",
@@ -305,10 +306,10 @@ window.PDFApp = (function () {
     "signature",
     "tools-group",
     "__divider__",
-    "zoom-100", "fit", "mouse-mode",   // 默认隐藏，但保留在列表里可一键开启
+    "zoom-100", "fit", "mouse-mode",   // 手型模式切换默认显示；100%/适合宽度默认隐藏但可一键开启
   ];
   /* 默认隐藏的按钮（仍是合法项，定制弹窗里以未勾选形式出现） */
-  const PDF_DEFAULT_HIDDEN = { "zoom-100": true, "fit": true, "mouse-mode": true };
+  const PDF_DEFAULT_HIDDEN = { "zoom-100": true, "fit": true };
 
   function cfgBridge() { return window.MojianConfig || null; }
   /* 读取配置；首次（无已存配置）用内置默认（含默认隐藏项）；
@@ -335,6 +336,7 @@ window.PDFApp = (function () {
       order.splice(at, 0, tok);
     });
     const hidden = (t.hidden && typeof t.hidden === "object") ? Object.assign({}, t.hidden) : {};
+    delete hidden["mouse-mode"]; // 手型模式切换：显式暴露（用户要求默认可用），不随旧配置隐藏
     return { order: order, hidden: hidden };
   }
   function savePdfToolbarConfig(order, hidden) {
@@ -797,6 +799,14 @@ window.PDFApp = (function () {
       lastX = e.clientX; lastY = e.clientY;
     });
     window.addEventListener("mouseup", function () { dragging = false; if (mainEl) mainEl.classList.remove("hand-grabbing"); });
+    // Ctrl / ⌘ + 滚轮：缩放页面（与工具栏 ±5% 同一套 scale，applyScale 内已 clamp + 重渲染）
+    // 非 Ctrl 时直接 return，保留普通滚轮的原生上下滚动。passive:false 才能 preventDefault 掉浏览器自身的整页缩放。
+    mainEl.addEventListener("wheel", function (e) {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1; // 上滚放大、下滚缩小，乘法步进更顺手
+      applyScale(scale * factor);
+    }, { passive: false });
   }
 
   /* =====================================================================
