@@ -1283,7 +1283,7 @@
   .pdf-pages {
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: flex-start;   /* 保留页面自身宽度(不拉伸)，配合下方 margin:auto 实现：窄页居中 / 放大超宽时左对齐 */
     gap: 16px;
     padding: 16px;
   }
@@ -1292,6 +1292,10 @@
     background: #fff;
     box-shadow: var(--shadow);
     line-height: 0;
+    /* 窄页：左右 auto 平分 → 居中；放大超出容器宽时 auto 解析为 0 → 左对齐，scrollLeft=0 即可见最左
+       （修复 align-items:center 导致的交叉轴居中溢出：左侧永远无法滚动到、最左内容被裁） */
+    margin-left: auto;
+    margin-right: auto;
   }
   .pdf-canvas { display: block; }
   /* pdf.js 文本层：透明文字叠在画布上，可选中复制（官方 textLayer 规则 + 选区高亮） */
