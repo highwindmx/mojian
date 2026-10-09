@@ -889,6 +889,64 @@
     color: #fff;
   }
 
+  /* ============================ 合并 PDF 工作台 ============================ */
+  .merge-file-list {
+    list-style: none;
+    margin: 12px 0 0;
+    padding: 0;
+    max-height: 320px;
+    overflow-y: auto;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+  }
+  .merge-file-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .merge-file-item:last-child { border-bottom: none; }
+  .merge-file-item:nth-child(odd) { background: var(--color-surface-alt, rgba(127,127,127,0.06)); }
+  .merge-file-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 14px;
+    color: var(--color-text);
+  }
+  .merge-file-ops {
+    display: flex;
+    gap: 4px;
+    flex: none;
+  }
+  .merge-file-ops button {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: 5px;
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-surface);
+    color: var(--color-text);
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+  }
+  .merge-file-ops button:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-primary); }
+  .merge-file-ops button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .merge-empty {
+    margin: 12px 0 0;
+    padding: 14px;
+    text-align: center;
+    color: var(--color-text-muted, #888);
+    font-size: 13px;
+    border: 1px dashed var(--color-border-strong);
+    border-radius: 6px;
+  }
+  .merge-empty.hidden { display: none; }
+
   /* ============================ 查找替换浮条 ============================ */
   .find-bar {
     position: fixed;
@@ -1568,9 +1626,11 @@
    * 打印：仅显示 PDF 打印容器
    * ===================================================================== */
   #pdf-print { display: none; }
+  #editor-print { display: none; }
   @media print {
     body * { visibility: hidden; }
-    #pdf-print, #pdf-print * { visibility: visible; }
+    #pdf-print, #pdf-print *,
+    #editor-print, #editor-print * { visibility: visible; }
     #pdf-print {
       display: block;
       position: absolute;
@@ -1578,6 +1638,12 @@
       width: 100%;
     }
     #pdf-print img { width: 100%; page-break-after: always; }
+    #editor-print {
+      display: block;
+      position: absolute;
+      left: 0; top: 0;
+      width: 100%;
+    }
   }
 
   /* =====================================================================

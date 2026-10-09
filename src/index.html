@@ -287,6 +287,21 @@
     </div>
   </div>
 
+  <!-- ============================ 合并 PDF 弹窗 ============================ -->
+  <div class="modal hidden" id="pdf-merge-dialog">
+    <div class="modal-card">
+      <h3>合并 PDF</h3>
+      <p class="modal-desc">依次添加要合并的 PDF（可多次添加）。列表中从上到下的顺序，即为合并后页面的顺序。</p>
+      <ul class="merge-file-list" id="pdf-merge-list"></ul>
+      <p class="merge-empty" id="pdf-merge-empty">尚未添加文件，点「＋ 添加文件」开始。</p>
+      <div class="modal-actions">
+        <button type="button" id="pdf-merge-add">＋ 添加文件</button>
+        <button class="primary" id="pdf-merge-ok" disabled>开始合并</button>
+        <button data-close>取消</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============================ 旋转 PDF 弹窗 ============================ -->
   <div class="modal hidden" id="pdf-rotate-dialog">
     <div class="modal-card">

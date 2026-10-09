@@ -60,8 +60,8 @@
   const TOOLBAR_ITEMS = {
     new:        { name:"新建", kind:"action", value:"new", title:"新建文档（HTML 或 Markdown）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>' },
     open:       { name:"打开", kind:"action", value:"open", title:"打开 HTML / Markdown 文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>' },
-    prevfile:   { name:"上一个文件", kind:"action", value:"prevfile", title:"打开同目录下上一个受支持的文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>', keep:true },
-    nextfile:   { name:"下一个文件", kind:"action", value:"nextfile", title:"打开同目录下下一个受支持的文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>', keep:true },
+    prevfile:   { name:"上一个文件", kind:"action", value:"prevfile", title:"打开同目录下上一个受支持的文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>' },
+    nextfile:   { name:"下一个文件", kind:"action", value:"nextfile", title:"打开同目录下下一个受支持的文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>' },
     save:       { name:"保存", kind:"action", value:"save", title:"保存（写回原文件）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>' },
     saveas:     { name:"另存为", kind:"action", value:"saveas", title:"另存为…", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 21V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/><polyline points="9 13 12 16 15 13"/><line x1="12" y1="16" x2="12" y2="9"/></svg>' },
     export:     { name:"导出", kind:"action", value:"export", title:"导出为自包含 HTML 文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><polyline points="8 11 12 15 16 11"/><path d="M5 19h14"/></svg>' },
@@ -100,10 +100,11 @@
     source:     { name:"源码", kind:"action", value:"source", title:"切换源码 / 可视化编辑", label:'源码', keep:true },
     softwrap:   { name:"自动换行", kind:"action", value:"softwrap", title:"切换源码栏自动换行（关闭后长行不换行、可横向滚动）", label:'换行', keep:true },
     ZOOMLABEL:  { kind:"zoomlabel", keep:true },
+    mergePdf:   { name:"合并PDF", kind:"action", value:"mergePdf", title:"合并多个 PDF（无需先打开 PDF）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="9" height="12" rx="1.5"/><rect x="11" y="8" width="9" height="12" rx="1.5"/></svg>' },
   };
 
   const DEFAULT_ORDER = [
-    "new","open","prevfile","nextfile","save","saveas","export","clear",
+    "new","open","mergePdf","prevfile","nextfile","save","saveas","export","clear",
     "__divider__",
     "undo","redo",
     "__divider__",
@@ -2296,6 +2297,7 @@
           { name: "HTML", extensions: ["html"] },
           { name: "Markdown", extensions: ["md"] },
           { name: "SVG", extensions: ["svg"] },
+          { name: "PDF", extensions: ["pdf"] },
         ],
       });
     } catch (e) {
@@ -2303,6 +2305,7 @@
       return;
     }
     if (!path) return;
+    if (/\.pdf$/i.test(path)) { await exportEditorPDF(path); return; }
     const kind = detectKindFromPath(path);
     currentFile = { path, kind };
     // 同步首屏路径指示与"打开位置"按钮（否则另存为之后仍显示"未打开文件"且按钮灰掉）
@@ -2312,6 +2315,47 @@
       document.title = name + " · 墨笺";
     } catch (e) {}
     await saveFileWithContent(path, kind);
+  }
+
+  /** 另存为 PDF：复用浏览器打印管线（与 PDF 模块 printPdf 同机制），
+   *  经系统「另存为 PDF / Microsoft Print to PDF」落盘，文件名预填为用户所选。
+   *  说明：打印对话框由系统接管，最终文件位置/文件名在对话框中确认；
+   *  这里只负责把编辑器内容排成可打印文档并以所选名字预填对话框。 */
+  async function exportEditorPDF(pdfPath) {
+    const content = editor.innerHTML;
+    const styleCss =
+      ".ep-body{font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto," +
+      "\"Helvetica Neue\",Arial,\"PingFang SC\",\"Microsoft YaHei\",sans-serif;" +
+      "line-height:1.7;color:#1f2937;max-width:820px;margin:0 auto;padding:24px;}" +
+      ".ep-body h1,.ep-body h2,.ep-body h3,.ep-body h4,.ep-body h5,.ep-body h6{line-height:1.3;margin:1.2em 0 .6em;}" +
+      ".ep-body h1{font-size:2em;} .ep-body h2{font-size:1.6em;} .ep-body h3{font-size:1.3em;} .ep-body h4{font-size:1.1em;}" +
+      ".ep-body p{margin:.6em 0;}" +
+      ".ep-body a{color:#2563eb;}" +
+      ".ep-body blockquote{border-left:4px solid #d1d5db;margin:1em 0;padding:.4em 1em;color:#4b5563;background:#f9fafb;}" +
+      ".ep-body code{background:#f3f4f6;padding:.15em .4em;border-radius:4px;font-family:Consolas,Menlo,monospace;font-size:.9em;}" +
+      ".ep-body pre{background:#f3f4f6;padding:12px;border-radius:6px;overflow:auto;}" +
+      ".ep-body pre code{background:none;padding:0;}" +
+      ".ep-body table{border-collapse:collapse;width:100%;margin:1em 0;}" +
+      ".ep-body td,.ep-body th{border:1px solid #d1d5db;padding:8px;}" +
+      ".ep-body img{max-width:100%;height:auto;}" +
+      ".ep-body hr{border:none;border-top:1px solid #d1d5db;margin:1.5em 0;}" +
+      ".ep-body ul,.ep-body ol{margin:.6em 0;padding-left:1.6em;}" +
+      "@media print{.ep-body{max-width:none;margin:0;}}";
+    const container = document.createElement("div");
+    container.id = "editor-print";
+    container.innerHTML = "<style>" + styleCss + "</style><div class=\"ep-body\">" + content + "</div>";
+    document.body.appendChild(container);
+    const oldTitle = document.title;
+    const base = (pdfPath.split(/[\\/]/).pop() || "document").replace(/\.pdf$/i, "");
+    document.title = base; // 让打印对话框默认文件名取用户所选
+    setStatus("已调起打印：在对话框中选择「另存为 PDF / Microsoft Print to PDF」，文件名默认为「" + base + "」");
+    setTimeout(function () {
+      window.print();
+      setTimeout(function () {
+        if (container.parentNode) container.parentNode.removeChild(container);
+        document.title = oldTitle;
+      }, 500);
+    }, 120);
   }
 
   /** 监听窗口拖放（Tauri dragDropEnabled + tauri://drag-drop 事件） */
@@ -2883,6 +2927,7 @@
       else if (action === "split") toggleSplitMode();
       else if (action === "softwrap") setSoftWrap(!softWrap);
       else if (action === "open-folder") openContainingFolder();
+      else if (action === "mergePdf") { if (window.PDFApp) window.PDFApp.merge(); }
       else if (action === "forecolor") { saveSelection(); if (foreColorInput) foreColorInput.click(); }
       else if (action === "backcolor") { saveSelection(); if (backColorInput) backColorInput.click(); }
     }

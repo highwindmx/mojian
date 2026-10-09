@@ -139,6 +139,8 @@ window.PDFApp = (function () {
   /* ---------- DOM ---------- */
   let pdfRoot, pdfToolbar, sidebar, thumbsEl, outlineEl, mainEl, pagesEl;
   let noteDialog, noteTextInput, splitDialog, findBar, findInput, findCount, loadingEl, annoBar;
+  let mergeDialog, mergeListEl, mergeEmptyEl, mergeAddBtn, mergeOkBtn;
+  let mergeFiles = [];   // 合并工作台：待合并的 PDF 路径（顺序即合并顺序）
 
   function $(id) { return document.getElementById(id); }
   function setStatus(msg, err) {
@@ -562,6 +564,11 @@ window.PDFApp = (function () {
     noteDialog = $("pdf-note-dialog");
     noteTextInput = $("pdf-note-text");
     splitDialog = $("pdf-split-dialog");
+    mergeDialog = $("pdf-merge-dialog");
+    mergeListEl = $("pdf-merge-list");
+    mergeEmptyEl = $("pdf-merge-empty");
+    mergeAddBtn = $("pdf-merge-add");
+    mergeOkBtn = $("pdf-merge-ok");
     findBar = $("pdf-find-bar");
     findInput = $("pdf-find-input");
     findCount = $("pdf-find-count");
@@ -671,6 +678,8 @@ window.PDFApp = (function () {
     if (splitOk) splitOk.addEventListener("click", onSplitOk);
     const rotateOk = $("pdf-rotate-ok");
     if (rotateOk) rotateOk.addEventListener("click", onRotateOk);
+    if (mergeAddBtn) mergeAddBtn.addEventListener("click", onMergeAdd);
+    if (mergeOkBtn) mergeOkBtn.addEventListener("click", onMergeOk);
 
     if (findInput) {
       findInput.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); runSearch(findInput.value); } });
@@ -705,7 +714,7 @@ window.PDFApp = (function () {
       m.addEventListener("click", function (e) { if (e.target === m) closeModal(m); });
     });
     // 导出 / 水印 / 签章 弹窗关闭
-    ["pdf-export-img-dialog", "pdf-export-word-dialog", "pdf-watermark-dialog", "pdf-signature-dialog", "pdf-rotate-dialog"].forEach(function (id) {
+    ["pdf-export-img-dialog", "pdf-export-word-dialog", "pdf-watermark-dialog", "pdf-signature-dialog", "pdf-rotate-dialog", "pdf-merge-dialog"].forEach(function (id) {
       const m = $(id); if (!m) return;
       m.querySelectorAll("[data-close]").forEach(function (b) { b.addEventListener("click", function () { closeModal(m); }); });
       m.addEventListener("click", function (e) { if (e.target === m) closeModal(m); });
@@ -1640,15 +1649,73 @@ window.PDFApp = (function () {
    * 合并 / 拆分
    * ===================================================================== */
   async function merge() {
-    let paths;
+    mergeFiles = [];
+    renderMergeList();
+    openModal(mergeDialog);
+  }
+
+  /* 渲染合并文件列表（含上移 / 下移 / 移除） */
+  function renderMergeList() {
+    if (!mergeListEl) return;
+    mergeListEl.innerHTML = "";
+    const empty = !mergeFiles.length;
+    if (mergeEmptyEl) mergeEmptyEl.classList.toggle("hidden", !empty);
+    if (mergeOkBtn) mergeOkBtn.disabled = empty;
+    mergeFiles.forEach(function (p, i) {
+      const li = document.createElement("li");
+      li.className = "merge-file-item";
+      const name = document.createElement("span");
+      name.className = "merge-file-name";
+      name.textContent = (i + 1) + ". " + p.split(/[\\/]/).pop();
+      name.title = p;
+      const ops = document.createElement("span");
+      ops.className = "merge-file-ops";
+      const up = document.createElement("button");
+      up.type = "button"; up.textContent = "↑"; up.title = "上移";
+      up.disabled = i === 0;
+      up.addEventListener("click", function () { moveMergeFile(i, -1); });
+      const down = document.createElement("button");
+      down.type = "button"; down.textContent = "↓"; down.title = "下移";
+      down.disabled = i === mergeFiles.length - 1;
+      down.addEventListener("click", function () { moveMergeFile(i, 1); });
+      const del = document.createElement("button");
+      del.type = "button"; del.textContent = "✕"; del.title = "移除";
+      del.addEventListener("click", function () { removeMergeFile(i); });
+      ops.appendChild(up); ops.appendChild(down); ops.appendChild(del);
+      li.appendChild(name); li.appendChild(ops);
+      mergeListEl.appendChild(li);
+    });
+  }
+
+  function moveMergeFile(i, dir) {
+    const j = i + dir;
+    if (j < 0 || j >= mergeFiles.length) return;
+    const t = mergeFiles[i]; mergeFiles[i] = mergeFiles[j]; mergeFiles[j] = t;
+    renderMergeList();
+  }
+
+  function removeMergeFile(i) {
+    mergeFiles.splice(i, 1);
+    renderMergeList();
+  }
+
+  async function onMergeAdd() {
     try {
-      paths = await tauriOpen({ multiple: true, filters: [{ name: "PDF", extensions: ["pdf"] }] });
-    } catch (e) { return; }
-    if (!paths || !paths.length) return;
+      const paths = await tauriOpen({ multiple: true, filters: [{ name: "PDF", extensions: ["pdf"] }] });
+      if (paths && paths.length) {
+        for (const p of paths) if (mergeFiles.indexOf(p) < 0) mergeFiles.push(p);
+        renderMergeList();
+      }
+    } catch (e) { /* 用户取消选择 */ }
+  }
+
+  async function onMergeOk() {
+    if (!mergeFiles.length) return;
+    closeModal(mergeDialog);
     showLoading("正在合并…");
     try {
       const docs = [];
-      for (const p of paths) {
+      for (const p of mergeFiles) {
         const blob = await invoke("read_file_base64", { path: p });
         docs.push(await PDFLib.PDFDocument.load(await b64ToBytesAsync(blob.data)));
       }
@@ -2470,7 +2537,7 @@ window.PDFApp = (function () {
   init();
 
   return {
-    open: open, close: close, save: save, saveAs: saveAs, undo: undo,
+    open: open, close: close, save: save, saveAs: saveAs, undo: undo, merge: merge,
     isActive: isActive, init: init,
     openToolbarSettings: openPdfToolbarSettings,
     resetToolbar: resetPdfToolbar,
