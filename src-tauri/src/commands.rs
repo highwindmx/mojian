@@ -672,6 +672,41 @@ fn infer_mime(path: &str) -> String {
     }
 }
 
+/// 新实例窗口序号（保证同一进程内窗口 label 唯一）
+static WIN_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// 打开一个新应用窗口并加载指定文件（拖放多文件 → 多实例）。
+/// 通过 initialization_script 在页面脚本执行前注入 window.__OPEN_PATH__，
+/// 新窗口前端 init 检测到该变量即自动打开文件。
+/// 不走 argv：argv 是进程级的，新窗口与主窗口同进程，经 argv 传递会互相污染。
+#[tauri::command]
+pub fn open_new_instance(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
+    let seq = WIN_SEQ.fetch_add(1, Ordering::Relaxed);
+    let label = format!("mojian-win-{}", seq);
+    // JSON 字符串转义：Windows 路径含反斜杠需双写，双引号同样转义
+    let escaped = path.replace('\\', "\\\\").replace('"', "\\\"");
+    let init = format!("window.__OPEN_PATH__ = \"{}\";", escaped);
+    // 在异步运行时中创建窗口：从 IPC / 拖放事件回调同步创建窗口会触发事件循环重入，
+    // 导致新窗口初始化挂起（表现为新实例白屏 / 无响应）。交出 async 运行时后创建即规避。
+    let app2 = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = tauri::WebviewWindowBuilder::new(
+            &app2,
+            label,
+            tauri::WebviewUrl::App("index.html".into()),
+        )
+        .title("墨笺")
+        .inner_size(1000.0, 720.0)
+        .initialization_script(init.as_str())
+        .build()
+        {
+            eprintln!("创建新窗口失败：{}", e);
+        }
+    });
+    Ok(())
+}
+
 /// 返回启动时通过命令行参数传入、需要打开的本地文件路径（文件关联双击场景）。
 /// Windows 双击 .md/.html/.pdf 时，系统把路径作为 argv 传给 exe，Tauri 不会自动打开，
 /// 故在此读取：仅取第一个后缀为 .md/.markdown/.html/.htm/.pdf 且确实存在的文件参数；无则 None。

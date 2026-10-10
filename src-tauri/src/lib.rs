@@ -20,6 +20,7 @@ pub fn run() {
             commands::load_signatures,
             commands::save_signatures,
             commands::get_initial_file,
+            commands::open_new_instance,
             commands::register_file_associations,
             commands::get_file_association_state,
             commands::open_epub,

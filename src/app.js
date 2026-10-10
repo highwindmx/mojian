@@ -1422,7 +1422,7 @@
    * PDF 模式下由 pdf.js 接管状态栏，这里直接返回。 */
   let statusTimer = null;
   function updateEditorStatus() {
-    if (window.__pdfActive) return;
+    if (window.__pdfActive || window.__epubActive) return;
     const el = document.getElementById("status");
     if (!el) return;
     const enc = (encodingSelect && encodingSelect.value) || "自动";
@@ -1591,13 +1591,17 @@
     }).join(", ");
   }
 
-  function injectFileStyle(head) {
+  function injectFileStyle(root) {
     const old = document.getElementById("file-style");
     if (old) old.remove();
-    if (!head) return;
+    if (!root) return;
     let css = "";
-    head.querySelectorAll("style").forEach(function (s) { css += s.textContent + "\n"; });
-    if (!css) return;
+    // 同时扫描 head 与 body 内嵌的 <style>/<link>，避免 body 内样式绕过隔离泄漏到应用外壳
+    root.querySelectorAll("style, link[rel='stylesheet']").forEach(function (s) {
+      css += (s.textContent || "") + "\n";
+      s.remove();
+    });
+    if (!css.trim()) return;
     // 页面 CSS 经选择器前缀改写锁在 #editor 内，杜绝全局选择器污染应用外壳；
     // 弹窗/遮罩覆盖菜单的问题另由 .editor 的 `contain: paint` 解决。
     const scoped = scopeCss(css);
@@ -1616,7 +1620,7 @@
     stripOnAttributes(doc.documentElement);
     loadedHead = doc.head ? doc.head.innerHTML : "";
     loadedTitle = doc.title || "";
-    injectFileStyle(doc.head);
+    injectFileStyle(doc.documentElement);   // 全文档(head+body)样式限定到 #editor，含 body 内嵌 <style>
     if (loadedTitle) document.title = loadedTitle;
     editor.innerHTML = doc.body ? doc.body.innerHTML : "";
     history = [takeSnapshot()];
@@ -1641,8 +1645,12 @@
   function loadSvg(svgText) {
     editor.contentEditable = "false"; // 预览只读，编辑在右侧源码区进行
     closeMdOutline();
-    // 内联渲染（保留动画/渐变等），sanitizeHtmlString 已剔除 <script> 与 on* 属性
-    editor.innerHTML = sanitizeHtmlString(svgText);
+    // 内联渲染（保留动画/渐变等）：SVG 内嵌 <style>/<link> 经 injectFileStyle 限定到 #editor 防泄漏，其余交给 contenteditable
+    const svgDoc = new DOMParser().parseFromString(svgText, "text/html");
+    svgDoc.querySelectorAll("script").forEach(function (s) { s.remove(); });
+    stripOnAttributes(svgDoc.documentElement);
+    injectFileStyle(svgDoc.documentElement);
+    editor.innerHTML = svgDoc.body ? svgDoc.body.innerHTML : "";
     sourceView.value = svgText;
     enterSplitMode();
     updatePlaceholder();
@@ -1751,6 +1759,17 @@
       });
     }
     return turndownService.turndown(editor.innerHTML);
+  }
+
+  /** 估算 MD 往返文本丢失比例：比较编辑器 HTML 可见文本 与 序列化后 MD 文本。
+   *  turndown 在复杂嵌套下可能静默丢内容，保存前做一次粗粒度核对，差异过大则提示（不阻断保存）。 */
+  function estimateMdTextLoss(html, md) {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = html || "";
+    const hText = (tmp.textContent || "").replace(/\s+/g, "");
+    const mText = (md || "").replace(/\s+/g, "");
+    if (!hText.length) return 0;
+    return (hText.length - mText.length) / hText.length;
   }
 
   /* ============================ Markdown 动态块（Mermaid / KaTeX 非编辑岛） ============================ */
@@ -1941,19 +1960,24 @@
     await openFileWithPath(selected);
   }
 
-  /** 按路径打开文件（供对话框与拖放共用） */
+  /** 按路径打开文件（供对话框与拖放共用）
+   * @param {string} path 文件路径 */
   async function openFileWithPath(path) {
     if (!TAURI) { setStatus("当前环境不支持文件读取。", true); return; }
-    // PDF：交给 PDF 模块（查看 / 旋转 / 备注 / 合并 / 拆分），不走文本编辑器
     const lower = path.toLowerCase();
     if (lower.endsWith(".pdf")) {
+      if (window.__epubActive) exitEpub();   // 若当前在 EPUB 模式，先退出避免双视图叠加（epub-root 残留会压扁 PDF）
+      if (window.__pdfActive && window.PDFApp) window.PDFApp.close();
       if (window.PDFApp) window.PDFApp.open(path);
       currentFile = { path: path, kind: "pdf" };
       refreshSiblings();
+      setFilePath(path, true);   // 与 EPUB 分支一致：入口处维护路径与「打开位置」按钮状态（pdf.js 内的 setFilePath 仍会再次同步）
       return;
     }
     // EPUB：交给 EPUB 只读阅读视图，不走文本编辑器
     if (lower.endsWith(".epub")) {
+      if (window.__pdfActive && window.PDFApp) window.PDFApp.close();   // 若当前在 PDF 模式，先退出避免双视图叠加
+      if (window.__epubActive) exitEpub();
       currentFile = { path: path, kind: "epub" };
       refreshSiblings();
       openEpub(path);
@@ -2032,12 +2056,22 @@
   function openEpub(path) {
     if (!TAURI) { setStatus("当前环境不支持文件读取。", true); return; }
     window.__epubActive = true;
+    // 兜底清场：若 PDF 视图仍开着（调用方未先 PDFApp.close()），直接收起其容器。
+    // 与 pdf.js open() 的清场对称——接管方自清场，不依赖调用方守卫，防双视图堆叠。
+    const pr = document.querySelector(".pdf-root");
+    if (pr) pr.classList.add("hidden");
     const ew = document.getElementById("editor-wrap");
     if (ew) ew.style.display = "none";
     const tb = document.getElementById("toolbar");
     if (tb) tb.classList.add("hidden");
     const root = document.getElementById("epub-root");
     if (root) root.classList.remove("hidden");
+    // EPUB 自带顶部信息栏（目录/章节/查找/退出）；主状态栏在此模式下无意义且会顶到页面上方，隐藏之。
+    // 全局应用栏（打开位置/定制/主题/编码）保留可见，避免 EPUB 模式下顶部菜单整体丢失。
+    const stb = document.querySelector(".status-bar");
+    if (stb) stb.classList.add("hidden");
+    window.__epubPath = path;   // 供「打开位置」在 EPUB 模式下定位当前文件
+    setFilePath(path, true);   // 显示 EPUB 路径并启用「打开位置」按钮（该按钮在全局顶栏 header）
     setStatus("正在解析 EPUB…");
     tauriInvoke("open_epub", { path })
       .then(function (meta) {
@@ -2067,6 +2101,51 @@
       });
   }
 
+  /** EPUB 阅读视图基础排版（注入 Shadow DOM，供章节内容兜底；出版社自带 <style> 在其后注入、冲突时优先生效）。
+      全部用字面色，不依赖应用 CSS 变量（影子树内 :root 变量虽可继承，但字面色更稳）。 */
+  const EPUB_BASE_CSS = [
+    "img,svg{max-width:100%;height:auto;display:block;margin:12px auto;}",
+    "pre{white-space:pre-wrap;background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:12px 14px;overflow-x:auto;}",
+    "a{color:#2563eb;}",
+    "blockquote{border-left:4px solid #d1d5db;margin:1em 0;padding:.4em 1em;color:#4b5563;background:#f9fafb;}",
+    "table{border-collapse:collapse;width:100%;margin:1em 0;}",
+    "td,th{border:1px solid #d1d5db;padding:8px;}",
+    "h1,h2,h3,h4,h5,h6{line-height:1.3;margin:1.2em 0 .6em;}",
+    "code{background:#f3f4f6;padding:.15em .4em;border-radius:4px;font-family:Consolas,Menlo,monospace;font-size:.9em;}",
+    "hr{border:none;border-top:1px solid #d1d5db;margin:1.5em 0;}",
+    "ul,ol{margin:.6em 0;padding-left:1.6em;}",
+    "mark{background:#ffe58f;color:inherit;border-radius:2px;padding:0 1px;}",
+    "mark.current{background:#ff9c3f;}"
+  ].join("\n");
+
+  /**
+   * 把第三方 HTML 渲染进宿主元素的 Shadow DOM：其内 <style>/<link> 按规范仅作用于影子子树，
+   * 结构上不可能泄漏到应用外壳（顶栏/工具栏），同时 100% 保留文档自带排版（表格/字体等）。
+   * 仅剥离 <script>/on* 防 XSS；解析失败退回原文（宁可样式泄漏也别丢内容）。
+   */
+  function renderIntoIsolatedHost(host, html, baseCss) {
+    if (!host) return;
+    let sr = host.shadowRoot;
+    if (!sr) sr = host.attachShadow({ mode: "open" });
+    let cleaned = String(html || "");
+    try {
+      const doc = new DOMParser().parseFromString(cleaned, "text/html");
+      doc.querySelectorAll("script").forEach(function (s) { s.remove(); });
+      stripOnAttributes(doc.documentElement);
+      // 收集 head/body 内全部 <style>/<link>（解析器可能把 <style> 移入 head），内联回影子树，
+      // 既保留文档自带排版（表格/字体），又靠 Shadow DOM 封装不泄漏到应用外壳。
+      let styles = "";
+      doc.querySelectorAll("style, link[rel='stylesheet']").forEach(function (s) {
+        styles += s.outerHTML;
+        s.remove();
+      });
+      const bodyHtml = doc.body ? doc.body.innerHTML : doc.documentElement.innerHTML;
+      cleaned = styles + bodyHtml;
+    } catch (e) { /* 解析失败时保留原文 */ }
+    // baseCss 在前、出版社样式在后：冲突时出版社优先生效（保真）
+    sr.innerHTML = (baseCss ? "<style>" + baseCss + "</style>" : "") + cleaned;
+  }
+
   function renderEpubChapter(i) {
     if (i < 0 || i >= epubChapters.length) return;
     epubIndex = i;
@@ -2079,7 +2158,7 @@
     const titleEl = document.getElementById("epub-title");
     if (titleEl) titleEl.textContent = ch.title;
     const content = document.getElementById("epub-content");
-    if (content) content.innerHTML = "<p style='padding:24px;color:var(--color-muted)'>正在加载章节…</p>";
+    if (content) renderIntoIsolatedHost(content, "<p style='padding:24px;color:#6b7280'>正在加载章节…</p>", EPUB_BASE_CSS);
     // 目录高亮当前章
     const tocItems = document.querySelectorAll("#epub-toc .epub-toc-item");
     tocItems.forEach(function (el, idx) { el.classList.toggle("active", idx === i); });
@@ -2091,12 +2170,12 @@
     tauriInvoke("get_epub_chapter", { path: epubPath, href: ch.href })
       .then(function (res) {
         if (content) {
-          content.innerHTML = res.html || "";
+          renderIntoIsolatedHost(content, res.html || "", EPUB_BASE_CSS);
           content.scrollTop = 0;
         }
       })
       .catch(function (e) {
-        if (content) content.innerHTML = "<p style='padding:24px;color:#c0392b'>章节加载失败：" + e + "</p>";
+        if (content) renderIntoIsolatedHost(content, "<p style='padding:24px;color:#c0392b'>章节加载失败：" + String(e) + "</p>", EPUB_BASE_CSS);
       });
   }
 
@@ -2108,6 +2187,10 @@
     if (ew) ew.style.display = "";
     const tb = document.getElementById("toolbar");
     if (tb) tb.classList.remove("hidden");
+    const stb = document.querySelector(".status-bar");
+    if (stb) stb.classList.remove("hidden");
+    window.__epubPath = null;   // 清除 EPUB 路径标记，恢复「打开位置」对普通文档的定位
+    setFilePath("", false);   // 退出阅读后无活动文档：复位路径指示并禁用「打开位置」
     epubChapters = [];
     epubIndex = -1;
     epubPath = null;
@@ -2160,7 +2243,8 @@
   function clearEpubFind() {
     const content = document.getElementById("epub-content");
     if (content) {
-      const marks = content.querySelectorAll("mark");
+      const root = content.shadowRoot || content;
+      const marks = root.querySelectorAll("mark");
       marks.forEach(function (m) {
         const parent = m.parentNode;
         while (m.firstChild) parent.insertBefore(m.firstChild, m);
@@ -2187,7 +2271,7 @@
       const esc = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       re = new RegExp(esc, caseSensitive ? "g" : "gi");
     } catch (e) { if (countEl) countEl.textContent = "无效"; return; }
-    const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, null);
+    const walker = document.createTreeWalker(content.shadowRoot || content, NodeFilter.SHOW_TEXT, null);
     const textNodes = [];
     let node;
     while ((node = walker.nextNode())) {
@@ -2258,6 +2342,11 @@
     let content;
     if (kind === "markdown") {
       content = serializeMarkdown();
+      const loss = estimateMdTextLoss(editor.innerHTML, content);
+      if (loss > 0.15) {
+        toast("⚠️ 保存的 MD 可能丢失约 " + Math.round(loss * 100) + "% 文本，建议另存备份核对");
+        setStatus("⚠️ MD 往返可能丢失内容，已照常保存：" + path, true);
+      }
     } else if (kind === "svg") {
       content = sourceView.value; // SVG 源码即真相
     } else {
@@ -2306,6 +2395,14 @@
     }
     if (!path) return;
     if (/\.pdf$/i.test(path)) { await exportEditorPDF(path); return; }
+    // 自动补全扩展名：用户未输入扩展名时按当前文档类型补齐，免去手动输入（Windows 保存框未自动补时兜底）
+    const _base = path.split(/[\\/]/).pop();
+    if (!/\./.test(_base)) {
+      const _ext = (currentFile && currentFile.kind === "markdown") ? ".md"
+                 : (currentFile && currentFile.kind === "svg") ? ".svg"
+                 : ".html";
+      path += _ext;
+    }
     const kind = detectKindFromPath(path);
     currentFile = { path, kind };
     // 同步首屏路径指示与"打开位置"按钮（否则另存为之后仍显示"未打开文件"且按钮灰掉）
@@ -2359,17 +2456,32 @@
   }
 
   /** 监听窗口拖放（Tauri dragDropEnabled + tauri://drag-drop 事件） */
+  /** 拖放落盘 → 多实例：每个拖入文件各占一个独立窗口。
+      当前窗口无文件时首个在本窗打开（避免留空窗），其余各开新实例；
+      当前窗口已有文件时全部开新实例，不打扰当前编辑内容。 */
+  function handleDroppedFiles(paths) {
+    const hasDoc = !!(currentFile && currentFile.path);
+    const rest = hasDoc ? paths : paths.slice(1);
+    for (let i = 0; i < rest.length; i++) openInNewInstance(rest[i]);
+    if (!hasDoc) openFileWithPath(paths[0]);
+  }
+
+  /** 在新窗口中打开文件（独立应用实例）。Rust 侧 open_new_instance 经
+      initialization_script 注入 window.__OPEN_PATH__，新窗口 init 检测到后自动加载。 */
+  function openInNewInstance(path) {
+    if (!TAURI) return;
+    tauriInvoke("open_new_instance", { path: path }).catch(function (e) {
+      setStatus("打开新实例失败：" + e, true);
+    });
+  }
+
   async function setupDragDrop() {
     if (!TAURI) return;
     try {
       await tauriListen("tauri://drag-drop", function (event) {
         const paths = (event && event.payload && event.payload.paths) || [];
         if (!paths.length) return;
-        openFileWithPath(paths[0]).then(function () {
-          if (paths.length > 1) {
-            setStatus("一次仅加载一个文件（已加载首个）");
-          }
-        });
+        handleDroppedFiles(paths);
       });
     } catch (e) {
       // 拖放监听失败不致命
@@ -2566,7 +2678,7 @@
   }
 
   async function openContainingFolder() {
-    const path = (currentFile && currentFile.path) || (window.__pdfPath) || null;
+    const path = (currentFile && currentFile.path) || window.__pdfPath || window.__epubPath || null;
     if (!path) {
       setStatus("请先打开一个文件再定位。", true);
       return;
@@ -3187,18 +3299,25 @@
     } catch (e) {}
     // 恢复上次源码分栏
     if (appConfig.sourceSplit) enterSplitMode();
-    // 处理文件关联：Windows 双击 .md/.html 时路径作为命令行参数传入，
-    // Tauri 不会自动打开，这里主动读取并在启动后加载该文件。
-    try {
-      const initialFile = await tauriInvoke("get_initial_file");
-      if (initialFile) {
-        openFileWithPath(initialFile);
-      } else {
-        // 仅在无文件关联传入时提示「新建」；有启动文件（如双击 PDF）时不提示，
-        // 避免打开 PDF/HTML 前先弹出误导性的「已新建 Markdown 文档」
-        setStatus("已新建 Markdown 文档");
-      }
-    } catch (e) {}
+    // 处理启动文件来源（优先级：多实例注入 > 命令行参数）：
+    // ① 多实例：Rust open_new_instance 经 initialization_script 注入 window.__OPEN_PATH__，
+    //    必须最先检查——argv 是进程级的，新窗口会误读主进程的启动参数；
+    // ② 文件关联：Windows 双击 .md/.html 时路径作为命令行参数传入，
+    //    Tauri 不会自动打开，这里主动读取并在启动后加载该文件。
+    if (window.__OPEN_PATH__) {
+      openFileWithPath(window.__OPEN_PATH__);
+    } else {
+      try {
+        const initialFile = await tauriInvoke("get_initial_file");
+        if (initialFile) {
+          openFileWithPath(initialFile);
+        } else {
+          // 仅在无文件关联传入时提示「新建」；有启动文件（如双击 PDF）时不提示，
+          // 避免打开 PDF/HTML 前先弹出误导性的「已新建 Markdown 文档」
+          setStatus("已新建 Markdown 文档");
+        }
+      } catch (e) {}
+    }
   }
 
   init();

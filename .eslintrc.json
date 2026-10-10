@@ -1,0 +1,40 @@
+{
+  "root": true,
+  "env": {
+    "browser": true,
+    "es2020": true
+  },
+  "parserOptions": {
+    "ecmaVersion": 2020,
+    "sourceType": "script"
+  },
+  "rules": {
+    "no-undef": "warn",
+    "no-unused-vars": "off",
+    "no-redeclare": "warn"
+  },
+  "globals": {
+    "TAURI": "readonly",
+    "marked": "readonly",
+    "TurndownService": "readonly",
+    "PDFLib": "readonly",
+    "HLJS": "readonly",
+    "pdfjsLib": "readonly",
+    "__OPEN_PATH__": "writable",
+    "mermaid": "readonly",
+    "katex": "readonly",
+    "tauriInvoke": "readonly",
+    "tauriOpen": "readonly",
+    "tauriSave": "readonly",
+    "tauriListen": "readonly",
+    "toast": "readonly",
+    "setStatus": "readonly",
+    "getConfig": "readonly",
+    "editor": "writable",
+    "currentFile": "writable",
+    "sourceMode": "writable",
+    "appConfig": "writable",
+    "softWrap": "writable",
+    "updateNavButtons": "readonly"
+  }
+}

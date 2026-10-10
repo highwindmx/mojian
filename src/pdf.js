@@ -825,6 +825,12 @@ window.PDFApp = (function () {
     if (!path || !window.pdfjsLib) return;
     currentPath = path;
     window.__pdfPath = path;
+    // 兜底清场：若 EPUB 阅读视图仍开着（调用方未先 exitEpub），直接收起其容器。
+    // .pdf-root 与 .epub-root 都是主容器 flex 流的子项（flex:1 1 auto），两个同时可见
+    // 会纵向堆叠——上方 PDF 被挤扁、下方残留 EPUB。此清场幂等且不依赖调用方守卫，
+    // 任何入口（拖放/对话框/文件关联）打开 PDF 都保证视图独占。
+    const er = $("epub-root"); if (er) er.classList.add("hidden");
+    window.__epubActive = false;
     // 先露出 PDF 根容器并隐藏编辑器 / 全局状态栏，否则 #pdf-loading 遮罩（pdf-root 的子元素）
     // 在 pdf-root 仍 hidden 时不会显示，用户只会看到"秒开"却没有加载提示。
     const ew = $("editor-wrap"); if (ew) ew.style.display = "none";
@@ -968,6 +974,8 @@ window.PDFApp = (function () {
     if (st) { st.style.display = ""; st.innerHTML = ""; st.classList.remove("status-error"); }
     const sb = $("pdf-status-bar");
     if (sb) { sb.classList.add("hidden"); const l = $("pdf-sb-left"); if (l) l.textContent = ""; }
+    // 退出 PDF 后无活动文档：复位主状态栏路径指示并禁用「打开位置」（与 EPUB 的 exitEpub 对称）
+    setFilePath("");
   }
 
   /* =====================================================================
