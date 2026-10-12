@@ -156,7 +156,7 @@ window.PDFApp = (function () {
   }
   function setFilePath(path) {
     const el = $("file-path");
-    if (el) { el.textContent = path || "未打开文件"; el.title = path || ""; }
+    if (el) { el.textContent = path || "未打开文件"; el.dataset.tip = path || ""; el.setAttribute('aria-label', path || ""); }
     const fb = $("open-folder");
     if (fb) fb.disabled = !path;
   }
@@ -207,7 +207,7 @@ window.PDFApp = (function () {
     if (b) b.disabled = history.length === 0;
   }
   async function undo() {
-    if (!history.length) { toast("没有可撤回的操作"); return; }
+    if (!history.length) { toast("没有可撤销的操作"); return; }
     const snap = history.pop();
     const bytesChanged = snap.bytes !== pdfBytes;
     notes = snap.notes;
@@ -221,14 +221,14 @@ window.PDFApp = (function () {
       // 水印这类"已烤进字节"的操作：回滚字节并整体重载
       pdfBytes = snap.bytes;
       pdfLibDoc = null;
-      showLoading("正在撤回…");
+      showLoading("正在撤销…");
       try { await reloadAfterSave(pdfBytes); } finally { hideLoading(); }
     } else {
       reRenderAll();
       renderedThumbs.forEach(function (n) { renderThumb(n, true); });
     }
-    toast("已撤回");
-    setStatus("已撤回上一步操作");
+    toast("已撤销");
+    setStatus("已撤销上一步操作");
   }
 
   /* 取视口内"可见面积最大"的页码，作为"当前页"（比 IntersectionObserver 更稳，
@@ -259,35 +259,35 @@ window.PDFApp = (function () {
    */
   const PDF_TOOLBAR_ITEMS = {
     open:           { name: "打开",      action: "open",         label: "打开",     title: "打开 PDF" },
-    "mouse-mode":   { name: "选择/手型", action: "mouse-mode",   label: "选择",     title: "切换 选择/手型（手型可拖拽平移）" },
+    "mouse-mode":   { name: "拖动",     action: "mouse-mode",   label: "拖动",     title: "拖动页面或选择文字" },
     prev:           { name: "上一页",    action: "prev",         label: "‹",        title: "上一页" },
     PAGEBOX:        { kind: "pagebox", keep: true },
     next:           { name: "下一页",    action: "next",         label: "›",        title: "下一页" },
     "zoom-out":     { name: "缩小",      action: "zoom-out",     label: "−",        title: "缩小 5%", keep: true },
     ZOOMLABEL:      { kind: "zoomlabel", keep: true },
     "zoom-in":      { name: "放大",      action: "zoom-in",      label: "＋",       title: "放大 5%", keep: true },
-    "zoom-100":     { name: "100%",      action: "zoom-100",     label: "100%",     title: "重置为 100%" },
+    "zoom-100":     { name: "100%",      action: "zoom-100",     label: "100%",     title: "还原页面大小" },
     fit:            { name: "适合宽度",  action: "fit",          label: "适合宽度", title: "适合宽度" },
-    "rotate-left":  { name: "左转本页",  action: "rotate-left",  label: "↺本页",    title: "左转当前可见页 90°" },
-    "rotate-right": { name: "右转本页",  action: "rotate-right", label: "↻本页",    title: "右转当前可见页 90°" },
+    "rotate-left":  { name: "左转本页",  action: "rotate-left",  label: "↺本页",    title: "向左旋转本页" },
+    "rotate-right": { name: "右转本页",  action: "rotate-right", label: "↻本页",    title: "向右旋转本页" },
     "rotate-all":   { name: "旋转全部",  action: "rotate-all",   label: "旋转全部", title: "旋转全部页面" },
-    undo:           { name: "撤回",      action: "undo",         label: "撤回",     title: "撤回上一步（水印 / 签章 / 备注 / 高亮 / 旋转）" },
+    undo:           { name: "撤销",      action: "undo",         label: "撤销",     title: "撤销上一步（水印 / 签章 / 备注 / 高亮 / 旋转）" },
     merge:          { name: "合并",      action: "merge",        label: "合并",     title: "合并多个 PDF" },
     split:          { name: "拆分",      action: "split",        label: "拆分",     title: "拆分 PDF" },
     find:           { name: "查找",      action: "find",         label: "查找",     title: "在 PDF 中查找" },
-    "export-img":   { name: "导出图",    action: "export-img",   label: "导出图",   title: "导出为图片（PNG/JPEG，可选目录）" },
-    "export-word":  { name: "转Word",    action: "export-word",  label: "转Word",   title: "转为 Word（文本版，图/表处留占位）" },
-    "save-as-pdf":  { name: "另存为新PDF", action: "save-as",    label: "另存为新PDF", title: "把修改后的 PDF 另存为新文件" },
-    watermark:      { name: "水印",      action: "watermark",    label: "水印",     title: "添加文字水印（应用后可撤回）" },
+    "export-img":   { name: "导出图片",  action: "export-img",   label: "导出图片", title: "导出为图片文件" },
+    "export-word":  { name: "转Word",    action: "export-word",  label: "转Word",   title: "导出成 Word 文档" },
+    "save-as-pdf":  { name: "另存为",    action: "save-as",      label: "另存为",   title: "把修改后的 PDF 另存为新文件" },
+    watermark:      { name: "水印",      action: "watermark",    label: "水印",     title: "添加文字水印（应用后可撤销）" },
     signature:      { name: "签章",      action: "signature",    label: "签章",     title: "插入图片 / 手绘签章" },
     print:          { name: "打印",      action: "print",        label: "打印",     title: "打印" },
     save:           { name: "保存",      action: "save",         label: "保存",     title: "保存修改回原文件", cls: "primary", keep: true },
-    close:          { name: "关闭",      action: "close",        label: "关闭",     title: "关闭 PDF，返回编辑器", keep: true },
+    close:          { name: "返回",      action: "close",        label: "返回",     title: "回到编辑界面", keep: true },
 
     /* —— 分组（下拉） —— 箭头只用 CSS ::after 绘制，label 不再带字面 ▾（否则会显示两个箭头） */
-    "save-as-group": { name: "另存为", kind: "group", label: "另存为", title: "另存为 / 导出",
+    "save-as-group": { name: "导出", kind: "group", label: "导出", title: "另存或导出",
                        children: ["save-as-pdf", "export-img", "export-word"] },
-    "tools-group":    { name: "其他工具", kind: "group", label: "其他工具", title: "水印 / 合并 / 拆分",
+    "tools-group":    { name: "更多工具", kind: "group", label: "更多工具", title: "水印 / 合并 / 拆分",
                        children: ["watermark", "merge", "split"] },
     sidebar:        { name: "侧栏", action: "sidebar", label: "侧栏", title: "显示 / 隐藏左侧大纲 / 缩略图栏", keep: true },
   };
@@ -385,7 +385,7 @@ window.PDFApp = (function () {
       }
       const b = document.createElement("button");
       b.dataset.pdfAction = item.action;
-      b.title = item.title || item.name;
+      b.dataset.tip = item.title || item.name; b.setAttribute('aria-label', item.title || item.name);
       b.textContent = item.label || item.name;
       if (item.cls) b.className = item.cls;
       pdfToolbar.appendChild(b);
@@ -404,7 +404,7 @@ window.PDFApp = (function () {
     tg.type = "button";
     tg.className = "pdf-group-toggle";
     tg.dataset.pdfGroupToggle = token;
-    tg.title = item.title || item.name;
+    tg.dataset.tip = item.title || item.name; tg.setAttribute('aria-label', item.title || item.name);
     tg.textContent = item.label || item.name;
     g.appendChild(tg);
     const menu = document.createElement("div");
@@ -417,7 +417,7 @@ window.PDFApp = (function () {
       cb.type = "button";
       cb.dataset.pdfAction = ci.action;
       cb.textContent = ci.label || ci.name;
-      cb.title = ci.title || ci.name;
+      cb.dataset.tip = ci.title || ci.name; cb.setAttribute('aria-label', ci.title || ci.name);
       menu.appendChild(cb);
     });
     g.appendChild(menu);
@@ -513,11 +513,11 @@ window.PDFApp = (function () {
         row.appendChild(kids);
       }
       const up = document.createElement("button");
-      up.type = "button"; up.className = "tb-move"; up.textContent = "↑"; up.title = "上移";
+      up.type = "button"; up.className = "tb-move"; up.textContent = "↑"; up.dataset.tip = "上移"; up.setAttribute('aria-label', "上移");
       up.disabled = !upEnabled;
       up.addEventListener("click", function (e) { e.preventDefault(); movePdfToolbarItem(token, -1); });
       const down = document.createElement("button");
-      down.type = "button"; down.className = "tb-move"; down.textContent = "↓"; down.title = "下移";
+      down.type = "button"; down.className = "tb-move"; down.textContent = "↓"; down.dataset.tip = "下移"; down.setAttribute('aria-label', "下移");
       down.disabled = !downEnabled;
       down.addEventListener("click", function (e) { e.preventDefault(); movePdfToolbarItem(token, 1); });
       row.appendChild(up); row.appendChild(down);
@@ -640,7 +640,7 @@ window.PDFApp = (function () {
         pagesEl.classList.remove("sig-placing");
         dirty = true; updateSaveState();
         renderPage(sigNum, true);
-        setStatus("已放置签章，点「保存」写回文件");
+        setStatus("已放置签章，点「保存」存入文件");
         return;
       }
       if (!noteMode) return;
@@ -1049,7 +1049,7 @@ window.PDFApp = (function () {
       el.className = "pdf-note-marker";
       el.style.left = p[0] + "px";
       el.style.top = p[1] + "px";
-      el.title = note.text;
+      el.dataset.tip = note.text; el.setAttribute('aria-label', note.text);
       el.textContent = "📝";
       el.addEventListener("click", function (e) {
         e.stopPropagation();
@@ -1203,7 +1203,7 @@ window.PDFApp = (function () {
       sig.x = tl[0]; sig.y = tl[1];
       sig.w = Math.abs(br[0] - tl[0]); sig.h = Math.abs(br[1] - tl[1]);
       pushHistory(); dirty = true; updateSaveState();
-      setStatus("已更新签章位置/大小，点「保存」写回文件");
+      setStatus("已更新签章位置/大小，点「保存」存入文件");
     }
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
@@ -1675,19 +1675,19 @@ window.PDFApp = (function () {
       const name = document.createElement("span");
       name.className = "merge-file-name";
       name.textContent = (i + 1) + ". " + p.split(/[\\/]/).pop();
-      name.title = p;
+      name.dataset.tip = p; name.setAttribute('aria-label', p);
       const ops = document.createElement("span");
       ops.className = "merge-file-ops";
       const up = document.createElement("button");
-      up.type = "button"; up.textContent = "↑"; up.title = "上移";
+      up.type = "button"; up.textContent = "↑"; up.dataset.tip = "上移"; up.setAttribute('aria-label', "上移");
       up.disabled = i === 0;
       up.addEventListener("click", function () { moveMergeFile(i, -1); });
       const down = document.createElement("button");
-      down.type = "button"; down.textContent = "↓"; down.title = "下移";
+      down.type = "button"; down.textContent = "↓"; down.dataset.tip = "下移"; down.setAttribute('aria-label', "下移");
       down.disabled = i === mergeFiles.length - 1;
       down.addEventListener("click", function () { moveMergeFile(i, 1); });
       const del = document.createElement("button");
-      del.type = "button"; del.textContent = "✕"; del.title = "移除";
+      del.type = "button"; del.textContent = "✕"; del.dataset.tip = "移除"; del.setAttribute('aria-label', "移除");
       del.addEventListener("click", function () { removeMergeFile(i); });
       ops.appendChild(up); ops.appendChild(down); ops.appendChild(del);
       li.appendChild(name); li.appendChild(ops);
@@ -2003,7 +2003,7 @@ window.PDFApp = (function () {
       await reloadAfterSave(pdfBytes);
       dirty = true; updateSaveState();
       closeModal($("pdf-watermark-dialog"));
-      setStatus("水印已应用（尚未写盘）：点「保存」写回文件，或点「撤回」还原");
+      setStatus("水印已应用（尚未写盘）：点「保存」存入文件，或点「撤销」还原");
       toast("水印已应用，记得点「保存」");
     } catch (e) {
       setStatus("水印失败：" + e, true); toast("水印失败：" + e);
@@ -2142,7 +2142,7 @@ window.PDFApp = (function () {
       list.forEach(function (item) {
         const cell = document.createElement("div");
         cell.className = "sign-saved-item";
-        cell.title = "点击使用 · 右键删除";
+        cell.dataset.tip = "点击使用 · 右键删除"; cell.setAttribute('aria-label', "点击使用 · 右键删除");
         const im = document.createElement("img");
         im.src = item.dataUrl;
         cell.appendChild(im);

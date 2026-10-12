@@ -60,29 +60,29 @@
   const TOOLBAR_ITEMS = {
     new:        { name:"新建", kind:"action", value:"new", title:"新建文档（HTML 或 Markdown）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>' },
     open:       { name:"打开", kind:"action", value:"open", title:"打开 HTML / Markdown 文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>' },
-    prevfile:   { name:"上一个文件", kind:"action", value:"prevfile", title:"打开同目录下上一个受支持的文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>' },
-    nextfile:   { name:"下一个文件", kind:"action", value:"nextfile", title:"打开同目录下下一个受支持的文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>' },
-    save:       { name:"保存", kind:"action", value:"save", title:"保存（写回原文件）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>' },
+    prevfile:   { name:"上一个", kind:"action", value:"prevfile", title:"打开同目录下上一个受支持的文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>' },
+    nextfile:   { name:"下一个", kind:"action", value:"nextfile", title:"打开同目录下下一个受支持的文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>' },
+    save:       { name:"保存", kind:"action", value:"save", title:"保存（存回原文件）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>' },
     saveas:     { name:"另存为", kind:"action", value:"saveas", title:"另存为…", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 21V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/><polyline points="9 13 12 16 15 13"/><line x1="12" y1="16" x2="12" y2="9"/></svg>' },
-    export:     { name:"导出", kind:"action", value:"export", title:"导出为自包含 HTML 文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><polyline points="8 11 12 15 16 11"/><path d="M5 19h14"/></svg>' },
+    export:     { name:"导出", kind:"action", value:"export", title:"存成独立网页文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><polyline points="8 11 12 15 16 11"/><path d="M5 19h14"/></svg>' },
     clear:      { name:"清空", kind:"action", value:"clear", title:"清空草稿", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>' },
-    undo:       { name:"撤销", kind:"action", value:"undo", title:"撤销 (Ctrl+Z)", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>' },
-    redo:       { name:"重做", kind:"action", value:"redo", title:"重做 (Ctrl+Y)", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg>' },
-    bold:       { name:"加粗", kind:"cmd", value:"bold", title:"加粗 (Ctrl+B)", label:'<b>B</b>' },
-    italic:     { name:"斜体", kind:"cmd", value:"italic", title:"斜体 (Ctrl+I)", label:'<i>I</i>' },
-    underline:  { name:"下划线", kind:"cmd", value:"underline", title:"下划线 (Ctrl+U)", label:'<u>U</u>' },
+    undo:       { name:"撤销", kind:"action", value:"undo", title:"撤销", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>' },
+    redo:       { name:"重做", kind:"action", value:"redo", title:"重做", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg>' },
+    bold:       { name:"加粗", kind:"cmd", value:"bold", title:"加粗", label:'<b>B</b>' },
+    italic:     { name:"斜体", kind:"cmd", value:"italic", title:"斜体", label:'<i>I</i>' },
+    underline:  { name:"下划线", kind:"cmd", value:"underline", title:"下划线", label:'<u>U</u>' },
     forecolor:  { name:"文字颜色", kind:"action", value:"forecolor", title:"文字颜色（选中文字后点击取色）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><text x="12" y="16" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">A</text><line x1="5" y1="20" x2="9" y2="20" stroke="#ef4444" stroke-width="2.6"/><line x1="9.6" y1="20" x2="13.6" y2="20" stroke="#f59e0b" stroke-width="2.6"/><line x1="14.2" y1="20" x2="19" y2="20" stroke="#3b82f6" stroke-width="2.6"/></svg>' },
     backcolor:  { name:"背景颜色", kind:"action", value:"backcolor", title:"背景颜色 / 高亮（选中文字后点击取色）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="13" width="15" height="4.5" rx="1.2" fill="#fde047" stroke="none"/><text x="12" y="17" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">A</text></svg>' },
-    H1:         { name:"标题 1", kind:"block", value:"H1", title:"标题 1", label:'H1' },
-    H2:         { name:"标题 2", kind:"block", value:"H2", title:"标题 2", label:'H2' },
-    H3:         { name:"标题 3", kind:"block", value:"H3", title:"标题 3", label:'H3' },
-    H4:         { name:"标题 4", kind:"block", value:"H4", title:"标题 4", label:'H4' },
-    H5:         { name:"标题 5", kind:"block", value:"H5", title:"标题 5", label:'H5' },
-    H6:         { name:"标题 6", kind:"block", value:"H6", title:"标题 6", label:'H6' },
-    insertUnorderedList: { name:"无序列表", kind:"cmd", value:"insertUnorderedList", title:"无序列表", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.4" fill="currentColor" stroke="none"/></svg>' },
-    insertOrderedList:   { name:"有序列表", kind:"cmd", value:"insertOrderedList", title:"有序列表", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="10" y1="6" x2="20" y2="6"/><line x1="10" y1="12" x2="20" y2="12"/><line x1="10" y1="18" x2="20" y2="18"/><text x="2" y="8" font-size="7" fill="currentColor" stroke="none">1</text><text x="2" y="14" font-size="7" fill="currentColor" stroke="none">2</text><text x="2" y="20" font-size="7" fill="currentColor" stroke="none">3</text></svg>' },
-    indent:     { name:"增加缩进", kind:"cmd", value:"indent", title:"增加缩进（需先选中列表项或引用块）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="5" x2="21" y2="5"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="3" y1="19" x2="21" y2="19"/><polyline points="3 9 7 12 3 15"/></svg>' },
-    outdent:    { name:"减少缩进", kind:"cmd", value:"outdent", title:"减少缩进（需先选中列表项或引用块）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="5" x2="21" y2="5"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="3" y1="19" x2="21" y2="19"/><polyline points="7 9 3 12 7 15"/></svg>' },
+    H1:         { name:"标题 1", kind:"block", value:"H1", title:"一级标题", label:'1' },
+    H2:         { name:"标题 2", kind:"block", value:"H2", title:"二级标题", label:'2' },
+    H3:         { name:"标题 3", kind:"block", value:"H3", title:"三级标题", label:'3' },
+    H4:         { name:"标题 4", kind:"block", value:"H4", title:"四级标题", label:'4' },
+    H5:         { name:"标题 5", kind:"block", value:"H5", title:"五级标题", label:'5' },
+    H6:         { name:"标题 6", kind:"block", value:"H6", title:"六级标题", label:'6' },
+    insertUnorderedList: { name:"项目符号", kind:"cmd", value:"insertUnorderedList", title:"加圆点列表", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.4" fill="currentColor" stroke="none"/></svg>' },
+    insertOrderedList:   { name:"编号", kind:"cmd", value:"insertOrderedList", title:"加数字列表", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="10" y1="6" x2="20" y2="6"/><line x1="10" y1="12" x2="20" y2="12"/><line x1="10" y1="18" x2="20" y2="18"/><text x="2" y="8" font-size="7" fill="currentColor" stroke="none">1</text><text x="2" y="14" font-size="7" fill="currentColor" stroke="none">2</text><text x="2" y="20" font-size="7" fill="currentColor" stroke="none">3</text></svg>' },
+    indent:     { name:"缩进", kind:"cmd", value:"indent", title:"向右缩进（先选中内容）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="5" x2="21" y2="5"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="3" y1="19" x2="21" y2="19"/><polyline points="3 9 7 12 3 15"/></svg>' },
+    outdent:    { name:"退一级", kind:"cmd", value:"outdent", title:"向左缩进（先选中内容）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="5" x2="21" y2="5"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="3" y1="19" x2="21" y2="19"/><polyline points="7 9 3 12 7 15"/></svg>' },
     BLOCKQUOTE: { name:"引用块", kind:"block", value:"BLOCKQUOTE", title:"引用块", svg:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 7h4v6H7v2H5V9a2 2 0 0 1 2-2zm8 0h4v6h-4v2h-2V9a2 2 0 0 1 2-2z" transform="scale(0.9) translate(1 1)"/></svg>' },
     link:       { name:"链接", kind:"action", value:"link", title:"插入/编辑链接", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></svg>' },
     image:      { name:"图片", kind:"action", value:"image", title:"插入图片", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M21 16l-5-5L5 20"/></svg>' },
@@ -91,14 +91,14 @@
     code:       { name:"代码块", kind:"action", value:"code", title:"插入代码块", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 7 4 12 8 17"/><polyline points="16 7 20 12 16 17"/></svg>' },
     hr:         { name:"分割线", kind:"action", value:"hr", title:"插入分割线", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="12" x2="20" y2="12"/></svg>' },
     emoji:      { name:"表情", kind:"action", value:"emoji", title:"插入表情（Emoji）", label:'😀' },
-    slides:     { name:"幻灯片", kind:"action", value:"slides", title:"以幻灯片演示（仅 Markdown 文档）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><circle cx="12" cy="16" r="1.5" fill="currentColor" stroke="none"/></svg>' },
+    slides:     { name:"演示", kind:"action", value:"slides", title:"做成幻灯片播放（仅 Markdown）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><circle cx="12" cy="16" r="1.5" fill="currentColor" stroke="none"/></svg>' },
     outline:    { name:"大纲", kind:"action", value:"outline", title:"显示/隐藏 Markdown 大纲", label:'大纲', keep:true },
     find:       { name:"查找替换", kind:"action", value:"find", title:"查找 / 替换", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>' },
-    zoomout:    { name:"缩小", kind:"action", value:"zoom-out", title:"缩小 (Ctrl+-)", label:'−', keep:true },
-    zoomin:     { name:"放大", kind:"action", value:"zoom-in", title:"放大 (Ctrl+=)", label:'+', keep:true },
-    split:      { name:"分栏", kind:"action", value:"split", title:"源码分栏（左渲染 / 右源码）", label:'分栏', keep:true },
-    source:     { name:"源码", kind:"action", value:"source", title:"切换源码 / 可视化编辑", label:'源码', keep:true },
-    softwrap:   { name:"自动换行", kind:"action", value:"softwrap", title:"切换源码栏自动换行（关闭后长行不换行、可横向滚动）", label:'换行', keep:true },
+    zoomout:    { name:"缩小", kind:"action", value:"zoom-out", title:"缩小", label:'−', keep:true },
+    zoomin:     { name:"放大", kind:"action", value:"zoom-in", title:"放大", label:'+', keep:true },
+    split:      { name:"分栏", kind:"action", value:"split", title:"左右分屏对照查看", label:'分栏', keep:true },
+    source:     { name:"原文", kind:"action", value:"source", title:"查看原始内容", label:'原文', keep:true },
+    softwrap:   { name:"自动换行", kind:"action", value:"softwrap", title:"长行自动折行", label:'换行', keep:true },
     ZOOMLABEL:  { kind:"zoomlabel", keep:true },
     mergePdf:   { name:"合并PDF", kind:"action", value:"mergePdf", title:"合并多个 PDF（无需先打开 PDF）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="9" height="12" rx="1.5"/><rect x="11" y="8" width="9" height="12" rx="1.5"/></svg>' },
   };
@@ -171,7 +171,7 @@
       if (item.kind === "cmd") btn.dataset.cmd = item.value;
       else if (item.kind === "block") btn.dataset.block = item.value;
       else btn.dataset.action = item.value;
-      btn.title = item.title || item.name;
+      btn.dataset.tip = item.title || item.name; btn.setAttribute('aria-label', item.title || item.name);
       if (item.svg) btn.innerHTML = item.svg;
       else if (item.label) btn.innerHTML = item.label;
       if (item.keep) btn.classList.add("keep");
@@ -231,14 +231,14 @@
       up.type = "button";
       up.className = "tb-move";
       up.textContent = "↑";
-      up.title = "上移";
+      up.dataset.tip = "上移"; up.setAttribute('aria-label', "上移");
       up.disabled = !upEnabled;
       up.addEventListener("click", function (e) { e.preventDefault(); moveToolbarItem(token, -1); });
       const down = document.createElement("button");
       down.type = "button";
       down.className = "tb-move";
       down.textContent = "↓";
-      down.title = "下移";
+      down.dataset.tip = "下移"; down.setAttribute('aria-label', "下移");
       down.disabled = !downEnabled;
       down.addEventListener("click", function (e) { e.preventDefault(); moveToolbarItem(token, 1); });
       row.appendChild(cb);
@@ -967,13 +967,13 @@
   const tableEditBar = document.createElement("div");
   tableEditBar.className = "table-edit-bar";
   tableEditBar.innerHTML =
-    '<button data-tbl="row-above" title="在上方插入行">＋行↑</button>' +
-    '<button data-tbl="row-below" title="在下方插入行">＋行↓</button>' +
-    '<button data-tbl="row-del" title="删除本行">－行</button>' +
+    '<button data-tbl="row-above" data-tip="在上方插入行">＋行↑</button>' +
+    '<button data-tbl="row-below" data-tip="在下方插入行">＋行↓</button>' +
+    '<button data-tbl="row-del" data-tip="删除本行">－行</button>' +
     '<span class="sep"></span>' +
-    '<button data-tbl="col-left" title="在左侧插入列">＋列←</button>' +
-    '<button data-tbl="col-right" title="在右侧插入列">＋列→</button>' +
-    '<button data-tbl="col-del" title="删除本列">－列</button>';
+    '<button data-tbl="col-left" data-tip="在左侧插入列">＋列←</button>' +
+    '<button data-tbl="col-right" data-tip="在右侧插入列">＋列→</button>' +
+    '<button data-tbl="col-del" data-tip="删除本列">－列</button>';
   document.body.appendChild(tableEditBar);
 
   function cellFromSelection() {
@@ -1127,7 +1127,7 @@
       s.className = "emoji-cell";
       s.textContent = item.e;
       s.dataset.k = item.k;
-      s.title = item.k;
+      s.dataset.tip = item.k; s.setAttribute('aria-label', item.k);
       s.addEventListener("click", function () {
         insertEmoji(item.e);
         if (emojiDialog) closeModal(emojiDialog);
@@ -1437,7 +1437,7 @@
         pos = "　光标 " + (getCaretOffset() + 1);
       }
     } catch (e) {}
-    el.textContent = "字数 " + chars + "　词数 " + (cjk + en) + "　编码 " + (enc || "自动") + pos;
+    el.textContent = "字数 " + chars + "　编码 " + (enc || "自动") + pos;
     el.classList.remove("status-error");
   }
   function scheduleStatus() {
@@ -1813,7 +1813,7 @@
         const fail = function (err) {
           cleanupMmd();
           div.textContent = source;
-          div.title = "Mermaid 渲染失败：" + (err && err.message ? err.message : String(err));
+          div.dataset.tip = "Mermaid 渲染失败：" + (err && err.message ? err.message : String(err)); div.setAttribute('aria-label', "Mermaid 渲染失败：" + (err && err.message ? err.message : String(err)));
           div.classList.add("md-block-error");
           if (pre.parentNode) pre.parentNode.replaceChild(div, pre);
         };
@@ -1895,7 +1895,7 @@
       a.dataset.idx = String(idx);
       a.style.paddingLeft = (8 + (level - 1) * 12) + "px";
       a.textContent = h.textContent.trim() || ("H" + level);
-      a.title = a.textContent;
+      a.dataset.tip = a.textContent; a.setAttribute('aria-label', a.textContent);
       a.addEventListener("click", function () {
         const list = editor.querySelectorAll("h1,h2,h3,h4,h5,h6");
         const target = list[idx];
@@ -2672,7 +2672,7 @@
   function setFilePath(path, hasFile) {
     if (filePathEl) {
       filePathEl.textContent = path || "未打开文件";
-      filePathEl.title = path || "";
+      filePathEl.dataset.tip = path || ""; filePathEl.setAttribute('aria-label', path || "");
     }
     if (folderBtn) folderBtn.disabled = !hasFile;
   }
@@ -2936,14 +2936,14 @@
     if (!sourceFind || sourceFind.query !== q || sourceFind.cs !== cs) {
       sourceFind = { matches: buildSourceMatches(q, cs), query: q, cs: cs, idx: -1 };
     }
-    if (!sourceFind.matches.length) { setStatus("源码中未找到：" + q); return; }
+    if (!sourceFind.matches.length) { setStatus("原文区未找到：" + q); return; }
     const ni = stepSource(forward);
     sourceFind.idx = ni;
     const pos = sourceFind.matches[ni];
     sourceView.focus();
     try { sourceView.setSelectionRange(pos, pos + q.length); } catch (e) {}
     scrollSourceToPos(pos);
-    setStatus("源码匹配：" + (ni + 1) + " / " + sourceFind.matches.length);
+    setStatus("原文区匹配：" + (ni + 1) + " / " + sourceFind.matches.length);
   }
   function replaceCurrentSource() {
     if (!sourceFind || sourceFind.idx < 0) { doFindSource(true); if (!sourceFind || sourceFind.idx < 0) return; }
@@ -2964,7 +2964,7 @@
       try { sourceView.setSelectionRange(np, np + q.length); } catch (e) {}
       scrollSourceToPos(np);
     }
-    setStatus("源码已替换 1 处");
+    setStatus("原文区已替换 1 处");
     doFindSource(true);
   }
   function replaceAllSource() {
@@ -2982,7 +2982,7 @@
     sourceView.value = out;
     highlightSource();
     sourceFind = null;
-    setStatus("源码已替换 " + count + " 处");
+    setStatus("原文区已替换 " + count + " 处");
   }
 
   if (findBar) {

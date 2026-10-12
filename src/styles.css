@@ -1716,3 +1716,29 @@
     .app-header { padding: 8px 12px; }
     .toolbar { padding: 6px 10px; gap: 3px; }
   }
+
+  /* =====================================================================
+   * 自实现 Tooltip（绕开原生 title 在 Tauri/WebView2 下的不稳定：
+   * 首 hover 不弹、需指针经过其他元素触发一次系统绘制后才弹）
+   * 由 tooltip.js 统一驱动，hover 延时弹出 [data-tip] 元素的提示。
+   * ===================================================================== */
+  .mtip {
+    position: fixed;
+    z-index: 2147483600;
+    max-width: 280px;
+    padding: 5px 9px;
+    border-radius: 6px;
+    background: rgba(33, 37, 41, 0.96);
+    color: #fff;
+    font-size: 12px;
+    line-height: 1.5;
+    letter-spacing: .2px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, .28);
+    pointer-events: none;          /* 不拦截鼠标，避免 mouseout 误触发闪烁 */
+    opacity: 0;
+    transform: translateY(2px);
+    transition: opacity .12s ease, transform .12s ease;
+  }
+  .mtip.show { opacity: 1; transform: none; }
