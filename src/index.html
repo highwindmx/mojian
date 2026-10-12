@@ -28,7 +28,7 @@
         <option value="yellow">养眼黄</option>
         <option value="dark">暗色</option>
       </select>
-      <label class="header-label" title="文件编码（打开/保存）">编码</label>
+      <label class="header-label" id="encoding-label" title="文件编码（打开/保存）">编码</label>
       <select id="encoding-select" class="header-select" title="文件编码（打开/保存）">
         <option value="">自动</option>
         <option value="utf-8">UTF-8</option>
@@ -164,14 +164,6 @@
       <div class="tb-tab-panel" id="tb-panel-toolbar">
         <div class="tb-word" id="tb-word">
           <div class="tb-word-col">
-            <div class="tb-word-title">可用命令</div>
-            <div class="tb-word-list" id="tb-avail-list" role="listbox" aria-label="可用命令"></div>
-          </div>
-          <div class="tb-word-mid">
-            <button type="button" id="tb-add-btn">添加 &rarr;</button>
-            <button type="button" id="tb-remove-btn">&larr; 删除</button>
-          </div>
-          <div class="tb-word-col">
             <div class="tb-word-title">当前显示的选项</div>
             <div class="tb-word-list" id="tb-current-list" role="listbox" aria-label="当前显示的选项"></div>
             <div class="tb-word-moves">
@@ -179,10 +171,16 @@
               <button type="button" id="tb-down-btn">下移</button>
             </div>
           </div>
+          <div class="tb-word-mid">
+            <button type="button" id="tb-add-btn">&larr; 添加</button>
+            <button type="button" id="tb-remove-btn">删除 &rarr;</button>
+          </div>
+          <div class="tb-word-col">
+            <div class="tb-word-title">可用命令</div>
+            <div class="tb-word-list" id="tb-avail-list" role="listbox" aria-label="可用命令"></div>
+          </div>
         </div>
-        <p class="modal-desc">「下划线、文字颜色、背景颜色、视频」仅在 HTML 文档中显示——Markdown 保存不了这些格式，编辑 .md 时自动隐藏。</p>
-        <!-- PDF 模式专用列表（复用弹窗时由 pdf.js 渲染，编辑器模式下隐藏） -->
-        <div class="toolbar-settings-list hidden" id="toolbar-settings-list"></div>
+        <p class="modal-desc" id="tb-htmlonly-desc">「下划线、文字颜色、背景颜色、视频」仅在 HTML 文档中显示——Markdown 保存不了这些格式，编辑 .md 时自动隐藏。</p>
         <div class="tb-toolbar-reset-row">
           <button type="button" id="toolbar-reset">恢复默认</button>
         </div>

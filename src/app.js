@@ -201,49 +201,63 @@
     updateNavButtons();
   }
 
-  /* 自定义弹窗：Word 式双列表（左=可用命令，右=当前显示的选项；PDF 模式复用弹窗但仍用旧列表） */
+  /* 自定义弹窗：Word 式双列表（左=当前显示的选项，右=可用命令）。
+   * 编辑器工具栏与 PDF 工具栏共用同一套面板，通过 tbCtx 上下文适配：
+   * { items, getConfig, commit(order, hidden), isFlexible(item) } */
   const toolbarSettingsModal = document.getElementById("toolbar-settings");
-  const toolbarSettingsList = document.getElementById("toolbar-settings-list"); /* PDF 模式专用 */
   const toolbarSettingsBtn = document.getElementById("toolbar-settings-btn");
   const tbWordPanel = document.getElementById("tb-word");
-  const tbAvailList = document.getElementById("tb-avail-list");
-  const tbCurList = document.getElementById("tb-current-list");
-  let tbAvailSel = null;  /* 左列表选中的命令 token */
-  let tbCurSelIdx = -1;   /* 右列表选中的序号（在可见序列中的位置） */
+  const tbAvailList = document.getElementById("tb-avail-list");   /* 右列：可用命令 */
+  const tbCurList = document.getElementById("tb-current-list");   /* 左列：当前显示 */
+  let tbAvailSel = null;  /* 右列表选中的命令 token */
+  let tbCurSelIdx = -1;   /* 左列表选中的序号（在可见序列中的位置） */
+  let tbCtx = null;       /* 当前定制的上下文，打开弹窗时设置 */
+
+  /** 编辑器工具栏上下文 */
+  const editorTbCtx = {
+    items: TOOLBAR_ITEMS,
+    getConfig: getToolbarConfig,
+    commit: function (order, hidden) {
+      appConfig.toolbar = { order: order, hidden: hidden };
+      renderToolbar();
+      saveConfig({ toolbar: appConfig.toolbar });
+    },
+    isFlexible: isFlexibleItem,
+  };
 
   /** 可自由增删/排序的项（keep 核心控件与缩放标签固定，不进双列表） */
   function isFlexibleItem(item) {
     return !!(item && !item.keep && item.kind !== "zoomlabel");
   }
 
-  /** 右列表数据：完整 order 中"当前显示"的可排序项（含分隔符；隐藏项不显示） */
-  function editorFlexTokens() {
-    const cfg = getToolbarConfig();
+  /** 左列表数据：完整 order 中"当前显示"的可排序项（含分隔符；隐藏项不显示） */
+  function tbFlexTokens(ctx) {
+    const cfg = ctx.getConfig();
     return cfg.order.filter(function (tok) {
       if (tok === "__divider__") return true;
-      return isFlexibleItem(TOOLBAR_ITEMS[tok]) && !cfg.hidden[tok];
+      return ctx.isFlexible(ctx.items[tok]) && !cfg.hidden[tok];
     });
   }
 
   /** 可见序列第 fi 项在完整 order 中的下标 */
-  function orderIndexAt(cfg, fi) {
+  function tbOrderIndexAt(ctx, cfg, fi) {
     let n = 0;
     for (let i = 0; i < cfg.order.length; i++) {
       const tok = cfg.order[i];
-      const vis = tok === "__divider__" || (isFlexibleItem(TOOLBAR_ITEMS[tok]) && !cfg.hidden[tok]);
+      const vis = tok === "__divider__" || (ctx.isFlexible(ctx.items[tok]) && !cfg.hidden[tok]);
       if (vis) { if (n === fi) return i; n++; }
     }
     return -1;
   }
 
-  /** 把右列表新顺序回填完整 order：keep/缩放标签/隐藏项槽位原位保留，可排序槽位按新顺序填充 */
-  function commitFlexOrder(flex) {
-    const cfg = getToolbarConfig();
+  /** 把左列表新顺序回填完整 order：keep/缩放标签/隐藏项槽位原位保留，可排序槽位按新顺序填充 */
+  function tbCommitFlex(ctx, flex) {
+    const cfg = ctx.getConfig();
     let i = 0;
     const newOrder = [];
     cfg.order.forEach(function (tok) {
-      const it = TOOLBAR_ITEMS[tok];
-      const vis = tok === "__divider__" || (it && isFlexibleItem(it) && !cfg.hidden[tok]);
+      const it = ctx.items[tok];
+      const vis = tok === "__divider__" || (it && ctx.isFlexible(it) && !cfg.hidden[tok]);
       if (vis) {
         if (i < flex.length) newOrder.push(flex[i++]);
         return;                       /* 删除后多余的旧槽位丢弃 */
@@ -251,24 +265,25 @@
       if (it) newOrder.push(tok);     /* keep / 缩放标签 / 隐藏项原位保留；未知 token 顺手清理 */
     });
     while (i < flex.length) newOrder.push(flex[i++]);
-    appConfig.toolbar = { order: newOrder, hidden: cfg.hidden };
-    renderToolbar();
-    saveConfig({ toolbar: appConfig.toolbar });
-    renderWordPanel();
+    ctx.commit(newOrder, cfg.hidden);
+    tbRenderPanel(ctx);
   }
 
   function openToolbarSettings() {
     if (!tbCurList) return;
+    tbCtx = editorTbCtx;
+    tbAvailSel = null;
+    tbCurSelIdx = -1;
     if (toolbarSettingsModal) {
       toolbarSettingsModal.classList.add("wide");   /* Word 式双列表需要更宽的弹窗 */
       openModal(toolbarSettingsModal);
     }
-    renderWordPanel();
+    tbRenderPanel(tbCtx);
     /* 打开即刷新文件关联勾选状态，不必切到「文件关联」Tab */
     refreshAssocChecks();
   }
 
-  /** 双列表行通用渲染：图标 + 名称（分隔符为特殊行） */
+  /** 双列表行通用渲染：图标 + 名称（分隔符为特殊行；分组名带下拉标记） */
   function tbRowFor(tok, items) {
     const row = document.createElement("div");
     row.className = "tb-word-row";
@@ -287,47 +302,48 @@
     }
     const nm = document.createElement("span");
     nm.className = "tb-word-name";
-    nm.textContent = it.name;
+    nm.textContent = it.name + (it.kind === "group" ? " ▾" : "");
     row.appendChild(nm);
     return row;
   }
 
-  function renderWordPanel() {
+  function tbRenderPanel(ctx) {
     if (!tbAvailList || !tbCurList) return;
-    const flex = editorFlexTokens();
+    const flex = tbFlexTokens(ctx);
 
-    /* 左列表：可用命令 = 尚未显示的可排序命令 + 分隔符 */
+    /* 左列表：当前显示的选项（按顺序） */
+    tbCurList.innerHTML = "";
+    if (tbCurSelIdx >= flex.length) tbCurSelIdx = flex.length - 1;
+    flex.forEach(function (tok, fi) {
+      const row = tbRowFor(tok, ctx.items);
+      if (fi === tbCurSelIdx) row.classList.add("selected");
+      row.addEventListener("click", function () {
+        tbCurSelIdx = fi;
+        tbRenderPanel(ctx);
+      });
+      row.addEventListener("dblclick", function () { tbCurSelIdx = fi; tbRemoveSelected(ctx); });
+      tbCurList.appendChild(row);
+    });
+
+    /* 右列表：可用命令 = 尚未显示的可排序命令 + 分隔符 */
     const shown = {};
     flex.forEach(function (t) { if (t !== "__divider__") shown[t] = true; });
-    const avail = Object.keys(TOOLBAR_ITEMS).filter(function (tok) {
-      return isFlexibleItem(TOOLBAR_ITEMS[tok]) && !shown[tok];
+    const avail = Object.keys(ctx.items).filter(function (tok) {
+      return ctx.isFlexible(ctx.items[tok]) && !shown[tok];
     });
     avail.push("__divider__");
     if (tbAvailSel !== null && avail.indexOf(tbAvailSel) < 0) tbAvailSel = null;
 
     tbAvailList.innerHTML = "";
     avail.forEach(function (tok) {
-      const row = tbRowFor(tok, TOOLBAR_ITEMS);
+      const row = tbRowFor(tok, ctx.items);
       if (tbAvailSel === tok) row.classList.add("selected");
       row.addEventListener("click", function () {
         tbAvailSel = tok;
-        renderWordPanel();
+        tbRenderPanel(ctx);
       });
-      row.addEventListener("dblclick", function () { tbAvailSel = tok; tbAddSelected(); });
+      row.addEventListener("dblclick", function () { tbAvailSel = tok; tbAddSelected(ctx); });
       tbAvailList.appendChild(row);
-    });
-
-    /* 右列表：当前显示的选项（按顺序） */
-    tbCurList.innerHTML = "";
-    if (tbCurSelIdx >= flex.length) tbCurSelIdx = flex.length - 1;
-    flex.forEach(function (tok, fi) {
-      const row = tbRowFor(tok, TOOLBAR_ITEMS);
-      if (fi === tbCurSelIdx) row.classList.add("selected");
-      row.addEventListener("click", function () {
-        tbCurSelIdx = fi;
-        renderWordPanel();
-      });
-      tbCurList.appendChild(row);
     });
 
     updateWordButtons(flex);
@@ -344,15 +360,15 @@
     if (down) down.disabled = tbCurSelIdx < 0 || tbCurSelIdx >= flex.length - 1;
   }
 
-  /* 添加：左列表选中项插入到右列表选中项之后（无选中则追加到末尾） */
-  function tbAddSelected() {
+  /* 添加：右列表选中项插入到左列表选中项之后（无选中则追加到末尾） */
+  function tbAddSelected(ctx) {
     if (tbAvailSel === null) return;
-    const cfg = getToolbarConfig();
+    const cfg = ctx.getConfig();
     const order = cfg.order.slice();
     const tok = tbAvailSel;
     let insertAt = order.length;
     if (tbCurSelIdx >= 0) {
-      const oi = orderIndexAt(cfg, tbCurSelIdx);
+      const oi = tbOrderIndexAt(ctx, cfg, tbCurSelIdx);
       if (oi >= 0) insertAt = oi + 1;
     }
     if (tok !== "__divider__" && order.includes(tok)) {
@@ -360,40 +376,36 @@
     }
     order.splice(Math.min(insertAt, order.length), 0, tok);
     if (tok !== "__divider__") delete cfg.hidden[tok];
-    appConfig.toolbar = { order: order, hidden: cfg.hidden };
-    renderToolbar();
-    saveConfig({ toolbar: appConfig.toolbar });
-    renderWordPanel();
+    ctx.commit(order, cfg.hidden);
+    tbRenderPanel(ctx);
   }
 
-  /* 删除：右列表选中项从显示中移除（命令隐藏并保留位置可再加回，分隔符直接删掉） */
-  function tbRemoveSelected() {
+  /* 删除：左列表选中项从显示中移除（命令隐藏并保留位置可再加回，分隔符直接删掉） */
+  function tbRemoveSelected(ctx) {
     if (tbCurSelIdx < 0) return;
-    const cfg = getToolbarConfig();
+    const cfg = ctx.getConfig();
     const order = cfg.order.slice();
-    const oi = orderIndexAt(cfg, tbCurSelIdx);
+    const oi = tbOrderIndexAt(ctx, cfg, tbCurSelIdx);
     if (oi < 0) return;
     const tok = order[oi];
     if (tok === "__divider__") order.splice(oi, 1);
     else cfg.hidden[tok] = true;
-    tbCurSelIdx = Math.min(tbCurSelIdx, editorFlexTokens().length - 1);
-    appConfig.toolbar = { order: order, hidden: cfg.hidden };
-    renderToolbar();
-    saveConfig({ toolbar: appConfig.toolbar });
-    renderWordPanel();
+    tbCurSelIdx = Math.min(tbCurSelIdx, tbFlexTokens(ctx).length - 1);
+    ctx.commit(order, cfg.hidden);
+    tbRenderPanel(ctx);
   }
 
   /* 上移/下移：在可见序列内交换后回填完整 order（分隔符、隐藏项均参与排序） */
-  function tbMoveSelected(dir) {
+  function tbMoveSelected(ctx, dir) {
     if (tbCurSelIdx < 0) return;
-    const flex = editorFlexTokens();
+    const flex = tbFlexTokens(ctx);
     const j = tbCurSelIdx + dir;
     if (j < 0 || j >= flex.length) return;
     const t = flex[tbCurSelIdx];
     flex[tbCurSelIdx] = flex[j];
     flex[j] = t;
     tbCurSelIdx = j;
-    commitFlexOrder(flex);
+    tbCommitFlex(ctx, flex);
   }
 
   if (tbWordPanel) {
@@ -401,15 +413,15 @@
     const remove = document.getElementById("tb-remove-btn");
     const up = document.getElementById("tb-up-btn");
     const down = document.getElementById("tb-down-btn");
-    if (add) add.addEventListener("click", tbAddSelected);
-    if (remove) remove.addEventListener("click", tbRemoveSelected);
-    if (up) up.addEventListener("click", function () { tbMoveSelected(-1); });
-    if (down) down.addEventListener("click", function () { tbMoveSelected(1); });
+    if (add) add.addEventListener("click", function () { if (tbCtx) tbAddSelected(tbCtx); });
+    if (remove) remove.addEventListener("click", function () { if (tbCtx) tbRemoveSelected(tbCtx); });
+    if (up) up.addEventListener("click", function () { if (tbCtx) tbMoveSelected(tbCtx, -1); });
+    if (down) down.addEventListener("click", function () { if (tbCtx) tbMoveSelected(tbCtx, 1); });
   }
 
-  /* PDF 打开时，顶部「定制」改为定制 PDF 工具栏（复用同一个弹窗） */
+  /* PDF 打开时，「定制」同样用 Word 式双列表，只是上下文换成 PDF 工具栏 */
   function pdfCustomizeActive() {
-    return !!(window.__pdfActive && window.PDFApp && window.PDFApp.openToolbarSettings);
+    return !!(window.__pdfActive && window.PDFApp && window.PDFApp.getToolbarCtx);
   }
   // 定制弹窗 Tab 切换（工具栏 / 文件关联）
   function showTbTab(name) {
@@ -426,42 +438,64 @@
   document.querySelectorAll("#tb-tabs .tb-tab").forEach(function (t) {
     t.addEventListener("click", function () { showTbTab(t.dataset.tab); });
   });
-  // 显隐整个 Tab 栏（PDF 模式复用弹窗时隐藏，仅保留旧版列表）
-  function setTbTabsVisible(visible) {
+  // 定制弹窗布局三态：editor=Tab 栏+双列表+md 说明；pdf=Tab 栏+双列表（无 md 说明，
+  // 保留「文件关联」Tab）；assoc-only=仅文件关联面板（EPUB 只读模式没有工具栏可定制）
+  function setTbTabsVisible(mode) {
     const tabsEl = document.getElementById("tb-tabs");
-    if (tabsEl) tabsEl.classList.toggle("hidden", !visible);
-    /* 编辑器模式：Word 式双列表；PDF 模式：pdf.js 渲染的旧版勾选列表 */
-    if (tbWordPanel) tbWordPanel.classList.toggle("hidden", !visible);
-    if (toolbarSettingsList) toolbarSettingsList.classList.toggle("hidden", visible);
-    if (toolbarSettingsModal) toolbarSettingsModal.classList.toggle("wide", visible);
-    if (!visible) {
-      const ac = document.getElementById("tb-panel-assoc");
-      if (ac) ac.classList.add("hidden");
-    }
+    const tbPanel = document.getElementById("tb-panel-toolbar");
+    const ac = document.getElementById("tb-panel-assoc");
+    const desc = document.getElementById("tb-htmlonly-desc");
+    const assocOnly = mode === "assoc-only";
+    if (tabsEl) tabsEl.classList.toggle("hidden", assocOnly);
+    if (tbPanel) tbPanel.classList.toggle("hidden", assocOnly);
+    if (tbWordPanel) tbWordPanel.classList.toggle("hidden", assocOnly);
+    if (toolbarSettingsModal) toolbarSettingsModal.classList.toggle("wide", !assocOnly);
+    if (desc) desc.classList.toggle("hidden", mode !== "editor");
+    if (assocOnly && ac) ac.classList.remove("hidden");
   }
 
   if (toolbarSettingsBtn) toolbarSettingsBtn.addEventListener("click", function () {
-    if (pdfCustomizeActive()) {
-      window.PDFApp.openToolbarSettings();   // PDF 模式：弹窗内容换成 PDF 按钮
-      setTbTabsVisible(false);               // 隐藏 Tab 栏与「文件关联」面板
+    const title = toolbarSettingsModal && toolbarSettingsModal.querySelector("h3");
+    // EPUB 只读模式：没有可定制的工具栏，直接展示「文件关联」面板
+    if (window.__epubActive) {
+      if (title) title.textContent = "文件关联";
+      tbCtx = null;                          // 双列表已隐藏，防误触
+      setTbTabsVisible("assoc-only");
+      if (toolbarSettingsModal) openModal(toolbarSettingsModal);
+      refreshAssocChecks();
       return;
     }
-    const title = toolbarSettingsModal && toolbarSettingsModal.querySelector("h3");
+    if (pdfCustomizeActive()) {
+      // PDF 模式：同一套 Word 双列表，上下文换成 PDF 工具栏；Tab 栏保留（视觉统一，含「文件关联」）
+      if (title) title.textContent = "自定义 PDF 工具栏";
+      tbCtx = window.PDFApp.getToolbarCtx();
+      tbAvailSel = null;
+      tbCurSelIdx = -1;
+      setTbTabsVisible("pdf");
+      if (toolbarSettingsModal) openModal(toolbarSettingsModal);
+      tbRenderPanel(tbCtx);
+      showTbTab("toolbar");
+      return;
+    }
     if (title) title.textContent = "自定义工具栏";
-    setTbTabsVisible(true);
+    setTbTabsVisible("editor");
     openToolbarSettings();
     showTbTab("toolbar");                    // 编辑器模式：默认停在「工具栏」Tab
   });
   if (toolbarSettingsModal) {
     const reset = document.getElementById("toolbar-reset");
     if (reset) reset.addEventListener("click", function () {
-      if (pdfCustomizeActive() && window.PDFApp.resetToolbar) { window.PDFApp.resetToolbar(); return; }
       tbAvailSel = null;
       tbCurSelIdx = -1;
+      if (pdfCustomizeActive() && window.PDFApp.resetToolbar) {
+        window.PDFApp.resetToolbar();        // 还原 PDF 配置并重渲工具栏
+        if (tbCtx) tbRenderPanel(tbCtx);     // 双列表刷新到默认状态
+        return;
+      }
       appConfig.toolbar = null;
       renderToolbar();
       saveConfig({ toolbar: null });
-      renderWordPanel();
+      tbRenderPanel(editorTbCtx);
     });
   }
 
@@ -2239,7 +2273,8 @@
     const root = document.getElementById("epub-root");
     if (root) root.classList.remove("hidden");
     // EPUB 自带顶部信息栏（目录/章节/查找/退出）；主状态栏在此模式下无意义且会顶到页面上方，隐藏之。
-    // 全局应用栏（打开位置/定制/主题/编码）保留可见，避免 EPUB 模式下顶部菜单整体丢失。
+    // 全局应用栏（打开位置/定制/主题）保留可见，避免 EPUB 模式下顶部菜单整体丢失；编码选框隐藏（对 EPUB 无意义）。
+    updateEncodingVisible();
     const stb = document.querySelector(".status-bar");
     if (stb) stb.classList.add("hidden");
     window.__epubPath = path;   // 供「打开位置」在 EPUB 模式下定位当前文件
@@ -2353,6 +2388,7 @@
 
   function exitEpub() {
     window.__epubActive = false;
+    updateEncodingVisible();   // 回到编辑界面，恢复编码选框
     const root = document.getElementById("epub-root");
     if (root) root.classList.add("hidden");
     const ew = document.getElementById("editor-wrap");
@@ -2698,10 +2734,16 @@
       当前窗口无文件时首个在本窗打开（避免留空窗），其余各开新实例；
       当前窗口已有文件时全部开新实例，不打扰当前编辑内容。 */
   function handleDroppedFiles(paths) {
-    const hasDoc = !!(currentFile && currentFile.path);
-    const rest = hasDoc ? paths : paths.slice(1);
-    for (let i = 0; i < rest.length; i++) openInNewInstance(rest[i]);
-    if (!hasDoc) openFileWithPath(paths[0]);
+    /* 空白实例（无文件且无未保存内容）= 用户刚开的空窗口：
+     * 拖入的文档直接就地打开——多个文件时最后一个开在这里，其余各开新实例；
+     * 非空白窗口（已有文档或有未保存内容）不覆盖现状，全部开新实例。 */
+    const hasDoc = !!(currentFile && currentFile.path) || hasUnsavedChanges();
+    if (hasDoc) {
+      for (let i = 0; i < paths.length; i++) openInNewInstance(paths[i]);
+      return;
+    }
+    for (let i = 0; i < paths.length - 1; i++) openInNewInstance(paths[i]);
+    openFileWithPath(paths[paths.length - 1]);
   }
 
   /** 在新窗口中打开文件（独立应用实例）。Rust 侧 open_new_instance 经
@@ -3044,6 +3086,17 @@
       updateEditorStatus();
     });
   }
+
+  /* 编码选框只对文本类文档有意义：PDF / EPUB 模式下连同「编码」标签一起隐藏。
+   * pdf.js open()/close() 与 enterEpub/exitEpub 在模式切换点调用本函数（全局挂载）。 */
+  function updateEncodingVisible() {
+    const hide = !!(window.__pdfActive || window.__epubActive);
+    const sel = document.getElementById("encoding-select");
+    const lab = document.getElementById("encoding-label");
+    if (sel) sel.classList.toggle("hidden", hide);
+    if (lab) lab.classList.toggle("hidden", hide);
+  }
+  window.__updateEncodingVisible = updateEncodingVisible;
 
   /* =====================================================================
    * 事件绑定

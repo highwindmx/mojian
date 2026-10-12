@@ -329,26 +329,6 @@
   .editor-wrap.source .source-view-wrap { display: block; }
 
   /* ============================ 工具栏自定义弹窗 ============================ */
-  .toolbar-settings-list {
-    max-height: 34vh;
-    overflow: auto;
-    margin: 4px 0;
-  }
-  .tb-set-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 2px;
-    font-size: 13px;
-    cursor: pointer;
-  }
-  .tb-set-row input { cursor: pointer; }
-  .tb-set-divider {
-    height: 1px;
-    background: var(--color-border);
-    margin: 8px 0;
-  }
-  .tb-set-row span { flex: 1 1 auto; }
   .tb-assoc-block {
     margin-top: 0;
     padding-top: 0;
@@ -365,21 +345,8 @@
   .tb-assoc-msg { margin-top: 8px; font-size: 13px; white-space: pre-line; min-height: 1em; }
   .tb-assoc-msg.ok { color: #1a7f37; }
   .tb-assoc-msg.err { color: #c0392b; }
-  .tb-set-row .tb-move {
-    width: 26px;
-    height: 24px;
-    border: 1px solid var(--color-border-strong);
-    border-radius: 5px;
-    background: var(--color-bg);
-    color: var(--color-text);
-    cursor: pointer;
-    font-size: 13px;
-    line-height: 1;
-  }
-  .tb-set-row .tb-move:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-primary); }
-  .tb-set-row .tb-move:disabled { opacity: 0.35; cursor: default; }
 
-  /* ============================ 定制弹窗 Word 式双列表（编辑器模式） ============================ */
+  /* ============================ 定制弹窗 Word 式双列表（编辑器 / PDF 共用） ============================ */
   #toolbar-settings.wide .modal-card { width: 640px; }
   .tb-word {
     display: grid;
@@ -424,7 +391,6 @@
   .tb-word-mid button { white-space: nowrap; }
   .tb-word-moves { display: flex; gap: 8px; margin-top: 8px; }
   .tb-word-moves button { flex: 1; }
-  .tb-set-row.tb-set-group { flex-wrap: wrap; }
 
   /* 定制弹窗 Tab（工具栏 / 文件关联） */
   .tb-tabs {
@@ -461,13 +427,6 @@
     border: 1px solid var(--color-border-strong);
     background: var(--color-surface);
     color: var(--color-text);
-  }
-  .tb-set-children {
-    flex-basis: 100%;
-    margin: -2px 0 2px 26px;
-    font-size: 11px;
-    color: var(--color-muted);
-    line-height: 1.4;
   }
 
   /* ============================ PDF 工具栏分组下拉 ============================ */

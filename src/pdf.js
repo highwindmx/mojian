@@ -248,7 +248,8 @@ window.PDFApp = (function () {
   /* =====================================================================
    * PDF 工具栏（数据驱动：与编辑器工具栏一致，支持显隐 + ↑↓ 排序，持久化到
    * mojian.config.json 的 pdfToolbar 字段）
-   *  - keep:true 的核心控件（页码框 / 缩放 / 保存 / 关闭）始终显示、不可隐藏排序
+   *  - keep:true 的核心控件（页码框 / 保存 / 侧栏）始终显示、不可隐藏排序；
+   *    返回 / 缩小 / 缩放百分比 / 放大 为普通可编辑项（可在定制弹窗里增删排序）
    *  - "__divider__" 为分组分隔符
    * ===================================================================== */
   /* 单个按钮项：{ name, action, label, title, cls?, keep? }
@@ -263,9 +264,9 @@ window.PDFApp = (function () {
     prev:           { name: "上一页",    action: "prev",         label: "‹",        title: "上一页" },
     PAGEBOX:        { kind: "pagebox", keep: true },
     next:           { name: "下一页",    action: "next",         label: "›",        title: "下一页" },
-    "zoom-out":     { name: "缩小",      action: "zoom-out",     label: "−",        title: "缩小 5%", keep: true },
-    ZOOMLABEL:      { kind: "zoomlabel", keep: true },
-    "zoom-in":      { name: "放大",      action: "zoom-in",      label: "＋",       title: "放大 5%", keep: true },
+    "zoom-out":     { name: "缩小",      action: "zoom-out",     label: "−",        title: "缩小 5%" },
+    ZOOMLABEL:      { name: "缩放百分比", kind: "zoomlabel", title: "当前缩放百分比" },
+    "zoom-in":      { name: "放大",      action: "zoom-in",      label: "＋",       title: "放大 5%" },
     "zoom-100":     { name: "100%",      action: "zoom-100",     label: "100%",     title: "还原页面大小" },
     fit:            { name: "适合宽度",  action: "fit",          label: "适合宽度", title: "适合宽度" },
     "rotate-left":  { name: "左转本页",  action: "rotate-left",  label: "↺本页",    title: "向左旋转本页" },
@@ -282,7 +283,7 @@ window.PDFApp = (function () {
     signature:      { name: "签章",      action: "signature",    label: "签章",     title: "插入图片 / 手绘签章" },
     print:          { name: "打印",      action: "print",        label: "打印",     title: "打印" },
     save:           { name: "保存",      action: "save",         label: "保存",     title: "保存修改回原文件", cls: "primary", keep: true },
-    close:          { name: "返回",      action: "close",        label: "返回",     title: "回到编辑界面", keep: true },
+    close:          { name: "返回",      action: "close",        label: "返回",     title: "回到编辑界面" },
 
     /* —— 分组（下拉） —— 箭头只用 CSS ::after 绘制，label 不再带字面 ▾（否则会显示两个箭头） */
     "save-as-group": { name: "导出", kind: "group", label: "导出", title: "另存或导出",
@@ -461,90 +462,24 @@ window.PDFApp = (function () {
     });
   }
 
-  /* 复用编辑器那套「自定义工具栏」弹窗（#toolbar-settings），列表内容换成 PDF 按钮 */
-  function openPdfToolbarSettings() {
-    const modal = $("toolbar-settings");
-    const list = $("toolbar-settings-list");
-    if (!modal || !list) return;
-    const cfg = getPdfToolbarConfig();
-    const title = modal.querySelector("h3");
-    if (title) title.textContent = "自定义 PDF 工具栏";
-    list.innerHTML = "";
-    cfg.order.forEach(function (token) {
-      if (token === "__divider__") {
-        const hr = document.createElement("div");
-        hr.className = "tb-set-divider";
-        list.appendChild(hr);
-        return;
-      }
-      const item = PDF_TOOLBAR_ITEMS[token];
-      if (!item || item.keep) return;
-      const idx = cfg.order.indexOf(token);
-      let upEnabled = idx > 0, downEnabled = idx < cfg.order.length - 1;
-      if (upEnabled) {
-        const prev = cfg.order[idx - 1];
-        const pi = PDF_TOOLBAR_ITEMS[prev];
-        if (prev === "__divider__" || (pi && pi.keep)) upEnabled = false;
-      }
-      if (downEnabled) {
-        const next = cfg.order[idx + 1];
-        const ni = PDF_TOOLBAR_ITEMS[next];
-        if (next === "__divider__" || (ni && ni.keep)) downEnabled = false;
-      }
-      const row = document.createElement("div");
-      row.className = "tb-set-row";
-      if (item.kind === "group") row.classList.add("tb-set-group");
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.checked = !cfg.hidden[token];
-      cb.addEventListener("change", function () {
-        const c = getPdfToolbarConfig();
-        if (cb.checked) delete c.hidden[token]; else c.hidden[token] = true;
-        savePdfToolbarConfig(c.order, c.hidden);
+  /* 「定制」与编辑器共用同一套 Word 式双列表（由 app.js 渲染 #tb-word），
+   * 这里只提供上下文适配：items / getConfig / commit / isFlexible。
+   * 语义与旧勾选列表一致：keep 项固定不进列表；分组作为整体显隐排序；
+   * 删除 = 写入 hidden（保留槽位可再加回）；分隔符删除 = 直接移除。 */
+  function getToolbarCtx() {
+    return {
+      items: PDF_TOOLBAR_ITEMS,
+      getConfig: getPdfToolbarConfig,
+      commit: function (order, hidden) {
+        savePdfToolbarConfig(order, hidden);
         renderPdfToolbar();
-      });
-      const span = document.createElement("span");
-      span.textContent = item.name + (item.kind === "group" ? " ▾" : "");
-      row.appendChild(cb); row.appendChild(span);
-      if (item.kind === "group") {
-        const kids = document.createElement("div");
-        kids.className = "tb-set-children";
-        kids.textContent = (item.children || []).map(function (c) { return (PDF_TOOLBAR_ITEMS[c] || {}).name || c; }).join("、");
-        row.appendChild(kids);
-      }
-      const up = document.createElement("button");
-      up.type = "button"; up.className = "tb-move"; up.textContent = "↑"; up.dataset.tip = "上移"; up.setAttribute('aria-label', "上移");
-      up.disabled = !upEnabled;
-      up.addEventListener("click", function (e) { e.preventDefault(); movePdfToolbarItem(token, -1); });
-      const down = document.createElement("button");
-      down.type = "button"; down.className = "tb-move"; down.textContent = "↓"; down.dataset.tip = "下移"; down.setAttribute('aria-label', "下移");
-      down.disabled = !downEnabled;
-      down.addEventListener("click", function (e) { e.preventDefault(); movePdfToolbarItem(token, 1); });
-      row.appendChild(up); row.appendChild(down);
-      list.appendChild(row);
-    });
-    modal.classList.remove("hidden");
-  }
-  function movePdfToolbarItem(token, dir) {
-    const cfg = getPdfToolbarConfig();
-    const order = cfg.order.slice();
-    const idx = order.indexOf(token);
-    if (idx < 0) return;
-    const swap = idx + dir;
-    if (swap < 0 || swap >= order.length) return;
-    const other = order[swap];
-    if (other === "__divider__") return;
-    const oi = PDF_TOOLBAR_ITEMS[other];
-    if (oi && oi.keep) return;
-    order[idx] = other; order[swap] = token;
-    savePdfToolbarConfig(order, cfg.hidden);
-    renderPdfToolbar();
-    openPdfToolbarSettings();
+      },
+      isFlexible: function (it) { return !!(it && !it.keep); },
+    };
   }
   function resetPdfToolbar() {
     savePdfToolbarConfig(null, null);
     renderPdfToolbar();
-    openPdfToolbarSettings();
   }
 
   /* =====================================================================
@@ -949,6 +884,7 @@ window.PDFApp = (function () {
     if (pdfRoot) pdfRoot.classList.remove("hidden");
     if (pdfToolbar) pdfToolbar.classList.remove("hidden");
     window.__pdfActive = true;
+    if (window.__updateEncodingVisible) window.__updateEncodingVisible();   // PDF 模式隐藏顶部编码选框
     renderPdfToolbar();   // 此时 app.js 的配置已加载完，按用户定制重建一次
     applySidebarState();  // 应用上次记忆的侧栏显隐偏好
     updatePageInfo();
@@ -960,6 +896,7 @@ window.PDFApp = (function () {
     const ew = $("editor-wrap"); if (ew) ew.style.display = "";
     const tb = $("toolbar"); if (tb) tb.classList.remove("hidden");
     window.__pdfActive = false;
+    if (window.__updateEncodingVisible) window.__updateEncodingVisible();   // 回编辑界面恢复编码选框
     window.__pdfPath = null;
     pdfDoc = null; pdfBytes = null; pdfLibDoc = null;
     if (pageObserver) { pageObserver.disconnect(); pageObserver = null; }
@@ -2547,7 +2484,7 @@ window.PDFApp = (function () {
   return {
     open: open, close: close, save: save, saveAs: saveAs, undo: undo, merge: merge,
     isActive: isActive, init: init,
-    openToolbarSettings: openPdfToolbarSettings,
+    getToolbarCtx: getToolbarCtx,
     resetToolbar: resetPdfToolbar,
     renderToolbar: renderPdfToolbar,
   };
