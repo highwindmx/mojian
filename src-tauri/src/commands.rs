@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{Cursor, Read};
 use std::path::PathBuf;
-use std::process::Command;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 use zip::ZipArchive;
@@ -522,7 +521,7 @@ pub fn list_supported_files(dir: String) -> Result<Vec<String>, String> {
         if !p.is_file() {
             continue;
         }
-        let s = p.to_string_lossy().to_string();
+        let s = p.display().to_string();
         // 仅保留受支持类型（与打开路由保持一致）
         if crate::file_kind::detect_kind(&s).is_ok() {
             out.push(s);
@@ -797,7 +796,6 @@ fn base64_decode(s: &str) -> Result<Vec<u8>, String> {
 #[tauri::command]
 pub fn register_file_associations(app: tauri::AppHandle, types: Vec<String>) -> Result<String, String> {
     use tauri::Manager;
-    use std::process::Command;
 
     // 定位图标目录：优先用 Tauri 资源目录；直接运行 release exe（未打包）时
     // resource_dir 可能解析不到，退回 exe 相对路径（target/release/../../icons = src-tauri/icons）。
@@ -833,7 +831,7 @@ pub fn register_file_associations(app: tauri::AppHandle, types: Vec<String>) -> 
 
     let exe = std::env::current_exe().map_err(|e| format!("无法获取 exe 路径: {e}"))?;
     let exe_quoted = format!("\"{}\" \"%1\"", exe.display());
-    let base = "HKEY_CURRENT_USER\\Software\\Classes";
+    let base = "Software\\Classes";
 
     let mut registered: Vec<&str> = Vec::new();
     let mut unregistered: Vec<&str> = Vec::new();
@@ -867,41 +865,54 @@ pub fn register_file_associations(app: tauri::AppHandle, types: Vec<String>) -> 
         }
     }
 
-    // 温和刷新资源管理器图标缓存（部分系统无效则忽略）
-    let _ = Command::new("ie4uinit").arg("-show").status();
+    // P1：登记为系统"默认应用"候选（仅声明当前已注册的类型）
+    register_capabilities(&registered)?;
+    // P0：以系统正统方式通知资源管理器关联/图标已变更
+    notify_shell_association_changed();
 
     let reg_str = if registered.is_empty() { "（无）".to_string() } else { registered.join("、") };
     let unreg_str = if unregistered.is_empty() { "（无）".to_string() } else { unregistered.join("、") };
     Ok(format!(
-        "已注册：{reg_str}；已解除：{unreg_str}。\n若资源管理器图标未立即更新，请重启资源管理器或重新登录。"
+        "已注册：{reg_str}；已解除：{unreg_str}。\n墨笺已登记为系统\"默认应用\"候选，可在 Windows 设置 → 应用 → 默认应用 中将其设为 .md/.html/.pdf/.svg/.epub 的默认打开程序。\n若资源管理器图标未立即更新，请重启资源管理器或重新登录。"
     ))
 }
 
 #[cfg(windows)]
-fn reg_set(key: &str, value: Option<&str>, data: &str) -> Result<(), String> {
-    let mut cmd = Command::new("reg");
-    cmd.arg("add").arg(key).arg("/t").arg("REG_SZ").arg("/f");
-    match value {
-        Some(v) => {
-            cmd.arg("/v").arg(v).arg("/d").arg(data);
-        }
-        None => {
-            cmd.arg("/ve").arg("/d").arg(data);
-        }
-    }
-    let out = cmd
-        .output()
-        .map_err(|e| format!("调用 reg 命令失败: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "reg add 失败 [{key}]: {}",
-            String::from_utf8_lossy(&out.stderr)
-        ));
-    }
-    Ok(())
+use winreg::RegKey;
+#[cfg(windows)]
+use winreg::enums::*;
+
+#[cfg(windows)]
+fn hkcu() -> RegKey {
+    RegKey::predef(HKEY_CURRENT_USER)
 }
 
-/// 返回当前已由本程序注册的文件类型（md/html/pdf/svg 子集）。
+/// 判断 winreg 错误是否为"项/值不存在"。winreg 0.52 的错误统一是 std::io::Error，
+/// 底层 ERROR_FILE_NOT_FOUND(2)/ERROR_PATH_NOT_FOUND(3) 已被 Rust 映射为 io::ErrorKind::NotFound，
+/// 视为幂等成功。
+#[cfg(windows)]
+fn reg_not_found(e: &std::io::Error) -> bool {
+    e.kind() == std::io::ErrorKind::NotFound
+}
+
+/// 写入 REG_SZ；name 为 None 表示写入 (默认) 值。
+/// 直接走 winreg（注册表本体即 UTF-16），不再经 reg.exe 子进程，也不存在 GBK 乱码。
+#[cfg(windows)]
+fn reg_set(key_path: &str, name: Option<&str>, data: &str) -> Result<(), String> {
+    let (key, _) = hkcu()
+        .create_subkey_with_flags(key_path, KEY_WRITE | KEY_READ)
+        .map_err(|e| format!("创建/打开注册表项失败 [{key_path}]: {e}"))?;
+    let d = data.to_string();
+    key.set_value(name.unwrap_or(""), &d)
+        .map_err(|e| format!("写入注册表值失败 [{key_path}]: {e}"))
+}
+
+/// 返回当前已由本程序注册的文件类型（md/html/pdf/svg/epub 子集）。
+///
+/// 判定：HKCU\Software\Classes\.ext 的 (默认) 值等于本程序 ProgID 即"已注册"。
+/// 语义是"墨笺是否已注册接管该类型"（复选框 = 注册意图），而非"系统当前默认是谁"——
+/// 后者受 Win8+ UserChoice Hash 墙约束（系统原有 UserChoice 会让刚注册的类型永远
+/// 显示"未生效"，如 svg/epub 系统出厂即有其他程序的 UserChoice），不适合做勾选回显。
 #[cfg(windows)]
 #[tauri::command]
 pub fn get_file_association_state() -> Result<Vec<String>, String> {
@@ -912,104 +923,104 @@ pub fn get_file_association_state() -> Result<Vec<String>, String> {
         ("svg",  "Mojian.SVG"),
         ("epub",  "Mojian.EPUB"),
     ];
-    let base = "HKEY_CURRENT_USER\\Software\\Classes";
+    let base = "Software\\Classes";
     let mut registered: Vec<String> = Vec::new();
     for (ext, progid) in all {
-        let ext_key = format!("{base}\\.{ext}");
-        if let Some(cur) = reg_get_default(&ext_key) {
-            if cur == *progid {
-                registered.push((*ext).to_string());
-            }
+        if reg_get_default(&format!("{base}\\.{ext}")) == Some((*progid).to_string()) {
+            registered.push((*ext).to_string());
         }
     }
     Ok(registered)
 }
 
+
+/// 删除整个子项（递归）。项不存在视为成功，保证解除注册幂等。
 #[cfg(windows)]
-fn reg_key_exists(key: &str) -> bool {
-    // 仅看退出码，避免解析本地化（GBK 等）报错文本导致误判
-    match std::process::Command::new("reg").arg("query").arg(key).output() {
-        Ok(o) => o.status.success(),
-        Err(_) => false,
+fn reg_delete_key(key_path: &str) -> Result<(), String> {
+    match hkcu().delete_subkey_all(key_path) {
+        Ok(()) => Ok(()),
+        Err(e) if reg_not_found(&e) => Ok(()),
+        Err(e) => Err(format!("删除注册表项失败 [{key_path}]: {e}")),
     }
 }
 
+/// 删除某个值。值不存在视为成功。
 #[cfg(windows)]
-fn reg_value_exists(key: &str, value: Option<&str>) -> bool {
-    let mut cmd = std::process::Command::new("reg");
-    cmd.arg("query").arg(key);
-    match value {
-        Some(v) => { cmd.arg("/v").arg(v); }
-        None => { cmd.arg("/ve"); }
-    }
-    match cmd.output() {
-        Ok(o) => o.status.success(),
-        Err(_) => false,
+fn reg_delete_value(key_path: &str, name: Option<&str>) -> Result<(), String> {
+    let key = match hkcu().open_subkey_with_flags(key_path, KEY_SET_VALUE | KEY_READ) {
+        Ok(k) => k,
+        Err(e) if reg_not_found(&e) => return Ok(()),
+        Err(e) => return Err(format!("打开注册表项失败 [{key_path}]: {e}")),
+    };
+    let n = name.unwrap_or("").to_string();
+    match key.delete_value(&n) {
+        Ok(()) => Ok(()),
+        Err(e) if reg_not_found(&e) => Ok(()),
+        Err(e) => Err(format!("删除注册表值失败 [{key_path}]: {e}")),
     }
 }
 
+/// 读取 (默认) 值，不存在或类型不符返回 None。
 #[cfg(windows)]
-fn reg_delete_key(key: &str) -> Result<(), String> {
-    // 项不存在视为成功（解除注册本就幂等）；先 query 判存在，绕开本地化报错文本
-    if !reg_key_exists(key) {
+fn reg_get_default(key_path: &str) -> Option<String> {
+    let key = hkcu().open_subkey(key_path).ok()?;
+    key.get_value::<String, _>("").ok()
+}
+
+/// P1：登记为系统"默认应用"候选（RegisteredApplications + Capabilities）。
+/// 仅声明当前已注册的类型，使墨笺出现在系统"默认应用"设置中；
+/// 真正的默认打开由用户/系统在设置里选择，由系统正确写入 UserChoice Hash（我们无法伪造）。
+#[cfg(windows)]
+fn register_capabilities(registered_exts: &[&str]) -> Result<(), String> {
+    let cap_root = "Software\\Mojian\\Capabilities";
+    let reg_apps = "Software\\RegisteredApplications";
+    if registered_exts.is_empty() {
+        // 没有任何类型时撤销登记，避免出现在"默认应用"里却打不开任何类型
+        let _ = reg_delete_key(cap_root);
+        let _ = reg_delete_value(reg_apps, Some("Mojian"));
         return Ok(());
     }
-    let out = std::process::Command::new("reg")
-        .arg("delete")
-        .arg(key)
-        .arg("/f")
-        .output()
-        .map_err(|e| format!("调用 reg 命令失败: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "reg delete 失败 [{key}]: {}",
-            String::from_utf8_lossy(&out.stderr)
-        ));
+    reg_set(cap_root, Some("ApplicationName"), "墨笺")?;
+    reg_set(
+        cap_root,
+        Some("ApplicationDescription"),
+        "本地 HTML/Markdown 所见即所得编辑器",
+    )?;
+    // FileAssociations：先清后建，避免残留已取消的类型
+    let fa_key = format!("{cap_root}\\FileAssociations");
+    let _ = reg_delete_key(&fa_key);
+    let (fa, _) = hkcu()
+        .create_subkey_with_flags(&fa_key, KEY_WRITE | KEY_READ)
+        .map_err(|e| format!("创建 FileAssociations 失败: {e}"))?;
+    for ext in registered_exts {
+        let progid = match *ext {
+            "md" => "Mojian.Markdown",
+            "html" => "Mojian.HTML",
+            "pdf" => "Mojian.PDF",
+            "svg" => "Mojian.SVG",
+            "epub" => "Mojian.EPUB",
+            _ => continue,
+        };
+        fa.set_value(format!(".{ext}").as_str(), &progid.to_string())
+            .map_err(|e| format!("写入 FileAssociations 失败: {e}"))?;
     }
+    // 在 RegisteredApplications 登记，使墨笺出现在系统"默认应用"设置中
+    reg_set(reg_apps, Some("Mojian"), cap_root)?;
     Ok(())
 }
 
+/// P0：以系统正统方式通知资源管理器关联/图标已变更（替代 legacy 的 ie4uinit -show）。
 #[cfg(windows)]
-fn reg_delete_value(key: &str, value: Option<&str>) -> Result<(), String> {
-    if !reg_value_exists(key, value) {
-        return Ok(());
+fn notify_shell_association_changed() {
+    use windows_sys::Win32::UI::Shell::{SHChangeNotify, SHCNE_ASSOCCHANGED, SHCNF_IDLIST};
+    unsafe {
+        SHChangeNotify(
+            SHCNE_ASSOCCHANGED as i32,
+            SHCNF_IDLIST,
+            std::ptr::null::<std::ffi::c_void>(),
+            std::ptr::null::<std::ffi::c_void>(),
+        );
     }
-    let mut cmd = std::process::Command::new("reg");
-    cmd.arg("delete").arg(key).arg("/f");
-    match value {
-        Some(v) => { cmd.arg("/v").arg(v); }
-        None => { cmd.arg("/ve"); }
-    }
-    let out = cmd
-        .output()
-        .map_err(|e| format!("调用 reg 命令失败: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "reg delete value 失败 [{key}]: {}",
-            String::from_utf8_lossy(&out.stderr)
-        ));
-    }
-    Ok(())
-}
-
-#[cfg(windows)]
-fn reg_get_default(key: &str) -> Option<String> {
-    let out = std::process::Command::new("reg")
-        .arg("query")
-        .arg(key)
-        .arg("/ve")
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let s = String::from_utf8_lossy(&out.stdout);
-    for line in s.lines() {
-        if let Some(idx) = line.find("REG_SZ") {
-            return Some(line[idx + 6..].trim().to_string());
-        }
-    }
-    None
 }
 
 #[cfg(not(windows))]

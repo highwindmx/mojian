@@ -140,14 +140,27 @@
     return { order: order, hidden: hidden };
   }
 
+  /** 当前可见工具栏项的统一数据源（顺序 + 显隐 + 分隔符），renderToolbar 与迷你预览共用 */
+  function visibleTokens() {
+    const cfg = getToolbarConfig();
+    const out = [];
+    cfg.order.forEach(function (token) {
+      if (token === "__divider__") { out.push({ divider: true }); return; }
+      const item = TOOLBAR_ITEMS[token];
+      if (!item) return;
+      if (cfg.hidden[token] && !item.keep && item.kind !== "zoomlabel") return;
+      out.push({ token: token, item: item, keep: !!item.keep });
+    });
+    return out;
+  }
+
   /** 依据配置动态渲染工具栏（分组 / 缩放标签 / 显隐 / 可拖拽） */
   function renderToolbar() {
     if (!toolbar) return;
-    const cfg = getToolbarConfig();
     toolbar.innerHTML = "";
     let lastWasDivider = false;
-    cfg.order.forEach(function (token) {
-      if (token === "__divider__") {
+    visibleTokens().forEach(function (entry) {
+      if (entry.divider) {
         if (lastWasDivider) return;
         const d = document.createElement("div");
         d.className = "divider";
@@ -155,10 +168,9 @@
         lastWasDivider = true;
         return;
       }
-      const item = TOOLBAR_ITEMS[token];
-      if (!item) return;
-      if (cfg.hidden[token] && !item.keep) { lastWasDivider = false; return; }
       lastWasDivider = false;
+      const item = entry.item;
+      const token = entry.token;
       if (item.kind === "zoomlabel") {
         const sp = document.createElement("span");
         sp.className = "zoom-label";
@@ -181,94 +193,212 @@
     updateNavButtons();
   }
 
-  /* 自定义弹窗：勾选显隐（核心 keep 控件与缩放标签不参与） */
+  /* 自定义弹窗：Word 式双列表（左=可用命令，右=当前显示的选项；PDF 模式复用弹窗但仍用旧列表） */
   const toolbarSettingsModal = document.getElementById("toolbar-settings");
-  const toolbarSettingsList = document.getElementById("toolbar-settings-list");
+  const toolbarSettingsList = document.getElementById("toolbar-settings-list"); /* PDF 模式专用 */
   const toolbarSettingsBtn = document.getElementById("toolbar-settings-btn");
-  function openToolbarSettings() {
-    if (!toolbarSettingsList) return;
-    const cfg = getToolbarConfig();
-    toolbarSettingsList.innerHTML = "";
-    // 依据实际 order 渲染，保证列表顺序与工具栏一致；分隔符/固定项(keep、缩放标签)不可排序
-    cfg.order.forEach(function (token) {
-      if (token === "__divider__") {
-        const hr = document.createElement("div");
-        hr.className = "tb-set-divider";
-        toolbarSettingsList.appendChild(hr);
-        return;
-      }
-      const item = TOOLBAR_ITEMS[token];
-      if (!item || item.keep || item.kind === "zoomlabel") return;
-      const idx = cfg.order.indexOf(token);
-      let upEnabled = idx > 0, downEnabled = idx < cfg.order.length - 1;
-      if (upEnabled) {
-        const prev = cfg.order[idx - 1];
-        if (prev === "__divider__") upEnabled = false;
-        else { const pi = TOOLBAR_ITEMS[prev]; if (pi && (pi.keep || pi.kind === "zoomlabel")) upEnabled = false; }
-      }
-      if (downEnabled) {
-        const next = cfg.order[idx + 1];
-        if (next === "__divider__") downEnabled = false;
-        else { const ni = TOOLBAR_ITEMS[next]; if (ni && (ni.keep || ni.kind === "zoomlabel")) downEnabled = false; }
-      }
-      const row = document.createElement("div");
-      row.className = "tb-set-row";
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.checked = !cfg.hidden[token];
-      cb.dataset.id = token;
-      cb.addEventListener("change", function () {
-        const c = getToolbarConfig();
-        if (cb.checked) delete c.hidden[token];
-        else c.hidden[token] = true;
-        appConfig.toolbar = { order: c.order.slice(), hidden: c.hidden };
-        renderToolbar();
-        saveConfig({ toolbar: appConfig.toolbar });
-      });
-      const span = document.createElement("span");
-      span.textContent = item.name;
-      const up = document.createElement("button");
-      up.type = "button";
-      up.className = "tb-move";
-      up.textContent = "↑";
-      up.dataset.tip = "上移"; up.setAttribute('aria-label', "上移");
-      up.disabled = !upEnabled;
-      up.addEventListener("click", function (e) { e.preventDefault(); moveToolbarItem(token, -1); });
-      const down = document.createElement("button");
-      down.type = "button";
-      down.className = "tb-move";
-      down.textContent = "↓";
-      down.dataset.tip = "下移"; down.setAttribute('aria-label', "下移");
-      down.disabled = !downEnabled;
-      down.addEventListener("click", function (e) { e.preventDefault(); moveToolbarItem(token, 1); });
-      row.appendChild(cb);
-      row.appendChild(span);
-      row.appendChild(up);
-      row.appendChild(down);
-      toolbarSettingsList.appendChild(row);
-    });
-    if (toolbarSettingsModal) openModal(toolbarSettingsModal);
+  const tbWordPanel = document.getElementById("tb-word");
+  const tbAvailList = document.getElementById("tb-avail-list");
+  const tbCurList = document.getElementById("tb-current-list");
+  let tbAvailSel = null;  /* 左列表选中的命令 token */
+  let tbCurSelIdx = -1;   /* 右列表选中的序号（在可见序列中的位置） */
+
+  /** 可自由增删/排序的项（keep 核心控件与缩放标签固定，不进双列表） */
+  function isFlexibleItem(item) {
+    return !!(item && !item.keep && item.kind !== "zoomlabel");
   }
 
-  // 在定制界面内用 ↑/↓ 调整按钮顺序（不跨越分隔符与固定项）
-  function moveToolbarItem(token, dir) {
+  /** 右列表数据：完整 order 中"当前显示"的可排序项（含分隔符；隐藏项不显示） */
+  function editorFlexTokens() {
+    const cfg = getToolbarConfig();
+    return cfg.order.filter(function (tok) {
+      if (tok === "__divider__") return true;
+      return isFlexibleItem(TOOLBAR_ITEMS[tok]) && !cfg.hidden[tok];
+    });
+  }
+
+  /** 可见序列第 fi 项在完整 order 中的下标 */
+  function orderIndexAt(cfg, fi) {
+    let n = 0;
+    for (let i = 0; i < cfg.order.length; i++) {
+      const tok = cfg.order[i];
+      const vis = tok === "__divider__" || (isFlexibleItem(TOOLBAR_ITEMS[tok]) && !cfg.hidden[tok]);
+      if (vis) { if (n === fi) return i; n++; }
+    }
+    return -1;
+  }
+
+  /** 把右列表新顺序回填完整 order：keep/缩放标签/隐藏项槽位原位保留，可排序槽位按新顺序填充 */
+  function commitFlexOrder(flex) {
+    const cfg = getToolbarConfig();
+    let i = 0;
+    const newOrder = [];
+    cfg.order.forEach(function (tok) {
+      const it = TOOLBAR_ITEMS[tok];
+      const vis = tok === "__divider__" || (it && isFlexibleItem(it) && !cfg.hidden[tok]);
+      if (vis) {
+        if (i < flex.length) newOrder.push(flex[i++]);
+        return;                       /* 删除后多余的旧槽位丢弃 */
+      }
+      if (it) newOrder.push(tok);     /* keep / 缩放标签 / 隐藏项原位保留；未知 token 顺手清理 */
+    });
+    while (i < flex.length) newOrder.push(flex[i++]);
+    appConfig.toolbar = { order: newOrder, hidden: cfg.hidden };
+    renderToolbar();
+    saveConfig({ toolbar: appConfig.toolbar });
+    renderWordPanel();
+  }
+
+  function openToolbarSettings() {
+    if (!tbCurList) return;
+    if (toolbarSettingsModal) {
+      toolbarSettingsModal.classList.add("wide");   /* Word 式双列表需要更宽的弹窗 */
+      openModal(toolbarSettingsModal);
+    }
+    renderWordPanel();
+    /* 打开即刷新文件关联勾选状态，不必切到「文件关联」Tab */
+    refreshAssocChecks();
+  }
+
+  /** 双列表行通用渲染：图标 + 名称（分隔符为特殊行） */
+  function tbRowFor(tok, items) {
+    const row = document.createElement("div");
+    row.className = "tb-word-row";
+    row.setAttribute("role", "option");
+    if (tok === "__divider__") {
+      row.classList.add("tb-word-divider-row");
+      row.textContent = "—— 分隔符 ——";
+      return row;
+    }
+    const it = items[tok];
+    if (it.svg) {
+      const ic = document.createElement("span");
+      ic.className = "tb-word-ico";
+      ic.innerHTML = it.svg;
+      row.appendChild(ic);
+    }
+    const nm = document.createElement("span");
+    nm.className = "tb-word-name";
+    nm.textContent = it.name;
+    row.appendChild(nm);
+    return row;
+  }
+
+  function renderWordPanel() {
+    if (!tbAvailList || !tbCurList) return;
+    const flex = editorFlexTokens();
+
+    /* 左列表：可用命令 = 尚未显示的可排序命令 + 分隔符 */
+    const shown = {};
+    flex.forEach(function (t) { if (t !== "__divider__") shown[t] = true; });
+    const avail = Object.keys(TOOLBAR_ITEMS).filter(function (tok) {
+      return isFlexibleItem(TOOLBAR_ITEMS[tok]) && !shown[tok];
+    });
+    avail.push("__divider__");
+    if (tbAvailSel !== null && avail.indexOf(tbAvailSel) < 0) tbAvailSel = null;
+
+    tbAvailList.innerHTML = "";
+    avail.forEach(function (tok) {
+      const row = tbRowFor(tok, TOOLBAR_ITEMS);
+      if (tbAvailSel === tok) row.classList.add("selected");
+      row.addEventListener("click", function () {
+        tbAvailSel = tok;
+        renderWordPanel();
+      });
+      row.addEventListener("dblclick", function () { tbAvailSel = tok; tbAddSelected(); });
+      tbAvailList.appendChild(row);
+    });
+
+    /* 右列表：当前显示的选项（按顺序） */
+    tbCurList.innerHTML = "";
+    if (tbCurSelIdx >= flex.length) tbCurSelIdx = flex.length - 1;
+    flex.forEach(function (tok, fi) {
+      const row = tbRowFor(tok, TOOLBAR_ITEMS);
+      if (fi === tbCurSelIdx) row.classList.add("selected");
+      row.addEventListener("click", function () {
+        tbCurSelIdx = fi;
+        renderWordPanel();
+      });
+      tbCurList.appendChild(row);
+    });
+
+    updateWordButtons(flex);
+  }
+
+  function updateWordButtons(flex) {
+    const add = document.getElementById("tb-add-btn");
+    const remove = document.getElementById("tb-remove-btn");
+    const up = document.getElementById("tb-up-btn");
+    const down = document.getElementById("tb-down-btn");
+    if (add) add.disabled = tbAvailSel === null;
+    if (remove) remove.disabled = tbCurSelIdx < 0;
+    if (up) up.disabled = tbCurSelIdx <= 0;
+    if (down) down.disabled = tbCurSelIdx < 0 || tbCurSelIdx >= flex.length - 1;
+  }
+
+  /* 添加：左列表选中项插入到右列表选中项之后（无选中则追加到末尾） */
+  function tbAddSelected() {
+    if (tbAvailSel === null) return;
     const cfg = getToolbarConfig();
     const order = cfg.order.slice();
-    const idx = order.indexOf(token);
-    if (idx < 0) return;
-    const swap = idx + dir;
-    if (swap < 0 || swap >= order.length) return;
-    const other = order[swap];
-    if (other === "__divider__") return;
-    const oItem = TOOLBAR_ITEMS[other];
-    if (oItem && (oItem.keep || oItem.kind === "zoomlabel")) return;
-    order[idx] = other;
-    order[swap] = token;
+    const tok = tbAvailSel;
+    let insertAt = order.length;
+    if (tbCurSelIdx >= 0) {
+      const oi = orderIndexAt(cfg, tbCurSelIdx);
+      if (oi >= 0) insertAt = oi + 1;
+    }
+    if (tok !== "__divider__" && order.includes(tok)) {
+      order.splice(order.indexOf(tok), 1);  /* 之前被删除过：先挪出旧位再插入 */
+    }
+    order.splice(Math.min(insertAt, order.length), 0, tok);
+    if (tok !== "__divider__") delete cfg.hidden[tok];
     appConfig.toolbar = { order: order, hidden: cfg.hidden };
     renderToolbar();
     saveConfig({ toolbar: appConfig.toolbar });
-    openToolbarSettings(); // 重渲染列表以刷新按钮可用状态
+    renderWordPanel();
   }
+
+  /* 删除：右列表选中项从显示中移除（命令隐藏并保留位置可再加回，分隔符直接删掉） */
+  function tbRemoveSelected() {
+    if (tbCurSelIdx < 0) return;
+    const cfg = getToolbarConfig();
+    const order = cfg.order.slice();
+    const oi = orderIndexAt(cfg, tbCurSelIdx);
+    if (oi < 0) return;
+    const tok = order[oi];
+    if (tok === "__divider__") order.splice(oi, 1);
+    else cfg.hidden[tok] = true;
+    tbCurSelIdx = Math.min(tbCurSelIdx, editorFlexTokens().length - 1);
+    appConfig.toolbar = { order: order, hidden: cfg.hidden };
+    renderToolbar();
+    saveConfig({ toolbar: appConfig.toolbar });
+    renderWordPanel();
+  }
+
+  /* 上移/下移：在可见序列内交换后回填完整 order（分隔符、隐藏项均参与排序） */
+  function tbMoveSelected(dir) {
+    if (tbCurSelIdx < 0) return;
+    const flex = editorFlexTokens();
+    const j = tbCurSelIdx + dir;
+    if (j < 0 || j >= flex.length) return;
+    const t = flex[tbCurSelIdx];
+    flex[tbCurSelIdx] = flex[j];
+    flex[j] = t;
+    tbCurSelIdx = j;
+    commitFlexOrder(flex);
+  }
+
+  if (tbWordPanel) {
+    const add = document.getElementById("tb-add-btn");
+    const remove = document.getElementById("tb-remove-btn");
+    const up = document.getElementById("tb-up-btn");
+    const down = document.getElementById("tb-down-btn");
+    if (add) add.addEventListener("click", tbAddSelected);
+    if (remove) remove.addEventListener("click", tbRemoveSelected);
+    if (up) up.addEventListener("click", function () { tbMoveSelected(-1); });
+    if (down) down.addEventListener("click", function () { tbMoveSelected(1); });
+  }
+
   /* PDF 打开时，顶部「定制」改为定制 PDF 工具栏（复用同一个弹窗） */
   function pdfCustomizeActive() {
     return !!(window.__pdfActive && window.PDFApp && window.PDFApp.openToolbarSettings);
@@ -288,14 +418,16 @@
   document.querySelectorAll("#tb-tabs .tb-tab").forEach(function (t) {
     t.addEventListener("click", function () { showTbTab(t.dataset.tab); });
   });
-  // 显隐整个 Tab 栏（PDF 模式复用弹窗时隐藏，仅保留工具栏列表）
+  // 显隐整个 Tab 栏（PDF 模式复用弹窗时隐藏，仅保留旧版列表）
   function setTbTabsVisible(visible) {
     const tabsEl = document.getElementById("tb-tabs");
     if (tabsEl) tabsEl.classList.toggle("hidden", !visible);
+    /* 编辑器模式：Word 式双列表；PDF 模式：pdf.js 渲染的旧版勾选列表 */
+    if (tbWordPanel) tbWordPanel.classList.toggle("hidden", !visible);
+    if (toolbarSettingsList) toolbarSettingsList.classList.toggle("hidden", visible);
+    if (toolbarSettingsModal) toolbarSettingsModal.classList.toggle("wide", visible);
     if (!visible) {
-      const tb = document.getElementById("tb-panel-toolbar");
       const ac = document.getElementById("tb-panel-assoc");
-      if (tb) tb.classList.remove("hidden");
       if (ac) ac.classList.add("hidden");
     }
   }
@@ -313,16 +445,15 @@
     showTbTab("toolbar");                    // 编辑器模式：默认停在「工具栏」Tab
   });
   if (toolbarSettingsModal) {
-    const ok = document.getElementById("toolbar-settings-ok");
     const reset = document.getElementById("toolbar-reset");
-    if (ok) ok.addEventListener("click", function () {
-      if (toolbarSettingsModal) closeModal(toolbarSettingsModal);
-    });
     if (reset) reset.addEventListener("click", function () {
       if (pdfCustomizeActive() && window.PDFApp.resetToolbar) { window.PDFApp.resetToolbar(); return; }
+      tbAvailSel = null;
+      tbCurSelIdx = -1;
       appConfig.toolbar = null;
       renderToolbar();
       saveConfig({ toolbar: null });
+      renderWordPanel();
     });
   }
 

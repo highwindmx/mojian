@@ -1,6 +1,6 @@
 [package]
 name = "mojian"
-version = "0.7.0"
+version = "1.0.3"
 description = "Tauri 2 富文本 / Markdown 编辑器"
 authors = ["maokk"]
 edition = "2021"
@@ -27,4 +27,9 @@ quick-xml = "0.36"
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+
+# Windows 专用：注册表与 Shell 通知。仅 Windows 目标拉取，避免非 Windows 编译报错。
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+windows-sys = { version = "0.52", features = ["Win32_UI_Shell"] }
 

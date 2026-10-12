@@ -14,11 +14,11 @@
   <!-- ============================ 顶部应用栏 ============================ -->
   <header class="app-header">
     <div class="header-actions">
-      <button id="open-folder" class="header-btn"  data-tip="打开文件所在的文件夹" aria-label="打开文件所在的文件夹"> disabled>
+      <button id="open-folder" class="header-btn"  data-tip="打开文件所在的文件夹" aria-label="打开文件所在的文件夹" disabled>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
         <span>打开位置</span>
       </button>
-      <button id="toolbar-settings-btn" class="header-btn"  data-tip="调整按钮显隐与顺序" aria-label="调整按钮显隐与顺序">>
+      <button id="toolbar-settings-btn" class="header-btn"  data-tip="调整按钮显隐与顺序" aria-label="调整按钮显隐与顺序">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         <span>定制</span>
       </button>
@@ -27,6 +27,12 @@
         <option value="sepia">豆沙绿</option>
         <option value="yellow">养眼黄</option>
         <option value="dark">暗色</option>
+      </select>
+      <label class="header-label" title="文件编码（打开/保存）">编码</label>
+      <select id="encoding-select" class="header-select" title="文件编码（打开/保存）">
+        <option value="">自动</option>
+        <option value="utf-8">UTF-8</option>
+        <option value="gbk">GBK</option>
       </select>
       <span class="hint">拖文件进来即用 · 自动存草稿</span>
     </div>
@@ -47,7 +53,7 @@
     <div class="md-outline hidden" id="md-outline">
       <div class="md-outline-head">
         <span>大纲</span>
-        <button type="button" id="md-outline-close"  data-tip="隐藏大纲" aria-label="隐藏大纲">>✕</button>
+        <button type="button" id="md-outline-close"  data-tip="隐藏大纲" aria-label="隐藏大纲">✕</button>
       </div>
       <div class="md-outline-list" id="md-outline-list"></div>
     </div>
@@ -61,7 +67,7 @@
 
   <!-- ============================ 状态栏 ============================ -->
   <div class="status-bar">
-    <span class="file-path" id="file-path"  data-tip="">>未打开文件</span>
+    <span class="file-path" id="file-path"  data-tip="">未打开文件</span>
     <span class="status-stats" id="status"></span>
   </div>
 
@@ -70,11 +76,11 @@
     <input type="text" id="find-input" placeholder="查找" autocomplete="off">
     <input type="text" id="replace-input" placeholder="替换为" autocomplete="off">
     <label title="区分大小写"><input type="checkbox" id="find-case"> 区分</label>
-    <button id="find-prev"  data-tip="上一个" aria-label="上一个">>↑</button>
-    <button id="find-next"  data-tip="下一个" aria-label="下一个">>↓</button>
-    <button id="find-replace"  data-tip="替换当前" aria-label="替换当前">>替换</button>
-    <button id="find-replace-all"  data-tip="全部替换" aria-label="全部替换">>全部</button>
-    <button id="find-close"  data-tip="关闭" aria-label="关闭">>✕</button>
+    <button id="find-prev"  data-tip="上一个" aria-label="上一个">↑</button>
+    <button id="find-next"  data-tip="下一个" aria-label="下一个">↓</button>
+    <button id="find-replace"  data-tip="替换当前" aria-label="替换当前">替换</button>
+    <button id="find-replace-all"  data-tip="全部替换" aria-label="全部替换">全部</button>
+    <button id="find-close"  data-tip="关闭" aria-label="关闭">✕</button>
   </div>
 
   <!-- ============================ 链接对话框 ============================ -->
@@ -137,13 +143,32 @@
   <div class="modal hidden" id="toolbar-settings">
     <div class="modal-card">
       <h3>自定义</h3>
+      <button type="button" class="modal-close" data-close aria-label="关闭">×</button>
       <div class="tb-tabs" id="tb-tabs">
         <button type="button" class="tb-tab active" data-tab="toolbar">工具栏</button>
         <button type="button" class="tb-tab" data-tab="assoc">文件关联</button>
       </div>
       <div class="tb-tab-panel" id="tb-panel-toolbar">
-        <p class="modal-desc">勾选要显示的按钮；用 ↓/↑ 调整顺序。</p>
-        <div class="toolbar-settings-list" id="toolbar-settings-list"></div>
+        <div class="tb-word" id="tb-word">
+          <div class="tb-word-col">
+            <div class="tb-word-title">可用命令</div>
+            <div class="tb-word-list" id="tb-avail-list" role="listbox" aria-label="可用命令"></div>
+          </div>
+          <div class="tb-word-mid">
+            <button type="button" id="tb-add-btn">添加 &rarr;</button>
+            <button type="button" id="tb-remove-btn">&larr; 删除</button>
+          </div>
+          <div class="tb-word-col">
+            <div class="tb-word-title">当前显示的选项</div>
+            <div class="tb-word-list" id="tb-current-list" role="listbox" aria-label="当前显示的选项"></div>
+            <div class="tb-word-moves">
+              <button type="button" id="tb-up-btn">上移</button>
+              <button type="button" id="tb-down-btn">下移</button>
+            </div>
+          </div>
+        </div>
+        <!-- PDF 模式专用列表（复用弹窗时由 pdf.js 渲染，编辑器模式下隐藏） -->
+        <div class="toolbar-settings-list hidden" id="toolbar-settings-list"></div>
         <div class="tb-toolbar-reset-row">
           <button type="button" id="toolbar-reset">恢复默认</button>
         </div>
@@ -163,19 +188,6 @@
           <button type="button" id="register-assoc-btn">应用</button>
           <p id="register-assoc-msg" class="tb-assoc-msg"></p>
         </div>
-      </div>
-      <div class="tb-assoc-block">
-        <div class="tb-assoc-title">文本编码（一般不用改）</div>
-        <p class="modal-desc">打开或保存时的编码，默认「自动」；仅当打开旧文件出现乱码时，才需手动指定。</p>
-        <select id="encoding-select" class="header-select" title="文件编码（打开/保存）">
-          <option value="">自动</option>
-          <option value="utf-8">UTF-8</option>
-          <option value="gbk">GBK</option>
-        </select>
-      </div>
-      <div class="modal-actions">
-        <button data-close>取消</button>
-        <button class="primary" id="toolbar-settings-ok">完成</button>
       </div>
     </div>
   </div>
@@ -197,14 +209,14 @@
     <div class="pdf-body" id="pdf-body">
       <div class="pdf-sidebar" id="pdf-sidebar">
         <div class="pdf-sidebar-tabs">
-          <button data-pdf-tab="thumbs" class="active"  data-tip="页面缩略图" aria-label="页面缩略图">>缩略图</button>
-          <button data-pdf-tab="outline"  data-tip="文档大纲 / 书签" aria-label="文档大纲 / 书签">>大纲</button>
+          <button data-pdf-tab="thumbs" class="active"  data-tip="页面缩略图" aria-label="页面缩略图">缩略图</button>
+          <button data-pdf-tab="outline"  data-tip="文档大纲 / 书签" aria-label="文档大纲 / 书签">大纲</button>
         </div>
         <div class="pdf-thumbs" id="pdf-thumbs"></div>
         <div class="pdf-outline hidden" id="pdf-outline"></div>
       </div>
       <!-- 侧栏宽度拖拽条（双击恢复默认宽度） -->
-      <div class="pdf-sidebar-resizer" id="pdf-sidebar-resizer"  data-tip="拖动调整侧栏宽度（双击恢复默认）" aria-label="拖动调整侧栏宽度（双击恢复默认）">></div>
+      <div class="pdf-sidebar-resizer" id="pdf-sidebar-resizer"  data-tip="拖动调整侧栏宽度（双击恢复默认）" aria-label="拖动调整侧栏宽度（双击恢复默认）"></div>
       <div class="pdf-main" id="pdf-main">
         <div class="pdf-pages" id="pdf-pages"><!-- 每页 .pdf-page(canvas + textLayer + 备注overlay) 由 pdf.js 动态生成 --></div>
       </div>
@@ -213,48 +225,48 @@
     <div class="pdf-status-bar hidden" id="pdf-status-bar">
       <div class="pdf-sb-left" id="pdf-sb-left"></div>
       <div class="pdf-sb-center" id="pdf-sb-center">
-        <button class="pdf-sb-nav" id="pdf-prev"  data-tip="上一页" aria-label="上一页">>‹</button>
+        <button class="pdf-sb-nav" id="pdf-prev"  data-tip="上一页" aria-label="上一页">‹</button>
         <input type="number" id="pdf-page-jump" min="1" title="输入页码后回车跳转">
         <span class="pdf-sb-sep">/</span>
         <span id="pdf-page-info">— / —</span>
-        <button class="pdf-sb-nav" id="pdf-next"  data-tip="下一页" aria-label="下一页">>›</button>
+        <button class="pdf-sb-nav" id="pdf-next"  data-tip="下一页" aria-label="下一页">›</button>
       </div>
       <div class="pdf-sb-right" id="pdf-sb-right"></div>
     </div>
     <!-- 选中文字批注浮条 -->
     <div class="anno-bar hidden" id="anno-bar">
-      <button data-anno="highlight"  data-tip="高亮选中文字" aria-label="高亮选中文字">>高亮</button>
-      <button data-anno="underline"  data-tip="给选中文字加下划线" aria-label="给选中文字加下划线">>划线</button>
-      <button data-anno="note"  data-tip="为选中区域添加气泡备注" aria-label="为选中区域添加气泡备注">>气泡</button>
+      <button data-anno="highlight"  data-tip="高亮选中文字" aria-label="高亮选中文字">高亮</button>
+      <button data-anno="underline"  data-tip="给选中文字加下划线" aria-label="给选中文字加下划线">划线</button>
+      <button data-anno="note"  data-tip="为选中区域添加气泡备注" aria-label="为选中区域添加气泡备注">气泡</button>
     </div>
     <!-- PDF 查找浮条 -->
     <div class="find-bar hidden" id="pdf-find-bar">
       <input type="text" id="pdf-find-input" placeholder="在 PDF 中查找" autocomplete="off">
-      <button id="pdf-find-prev"  data-tip="上一个" aria-label="上一个">>↑</button>
-      <button id="pdf-find-next"  data-tip="下一个" aria-label="下一个">>↓</button>
+      <button id="pdf-find-prev"  data-tip="上一个" aria-label="上一个">↑</button>
+      <button id="pdf-find-next"  data-tip="下一个" aria-label="下一个">↓</button>
       <span id="pdf-find-count" class="pdf-find-count"></span>
-      <button id="pdf-find-close"  data-tip="关闭" aria-label="关闭">>✕</button>
+      <button id="pdf-find-close"  data-tip="关闭" aria-label="关闭">✕</button>
     </div>
   </div>
 
   <!-- ============================ EPUB 只读阅读视图 ============================ -->
   <div class="epub-root hidden" id="epub-root">
     <div class="epub-topbar">
-      <button type="button" id="epub-toc-toggle"  data-tip="显示/隐藏目录" aria-label="显示/隐藏目录">>目录</button>
-      <button type="button" id="epub-prev"  data-tip="上一章" aria-label="上一章">>‹ 上一章</button>
+      <button type="button" id="epub-toc-toggle"  data-tip="显示/隐藏目录" aria-label="显示/隐藏目录">目录</button>
+      <button type="button" id="epub-prev"  data-tip="上一章" aria-label="上一章">‹ 上一章</button>
       <span class="epub-title" id="epub-title">—</span>
-      <button type="button" id="epub-next"  data-tip="下一章" aria-label="下一章">>下一章 ›</button>
+      <button type="button" id="epub-next"  data-tip="下一章" aria-label="下一章">下一章 ›</button>
       <span class="epub-spacer"></span>
-      <button type="button" id="epub-find-toggle"  data-tip="在本书中查找" aria-label="在本书中查找">>🔍 查找</button>
-      <button type="button" id="epub-close"  data-tip="退出阅读" aria-label="退出阅读">>✕ 退出</button>
+      <button type="button" id="epub-find-toggle"  data-tip="在本书中查找" aria-label="在本书中查找">🔍 查找</button>
+      <button type="button" id="epub-close"  data-tip="退出阅读" aria-label="退出阅读">✕ 退出</button>
     </div>
     <div class="epub-find-bar hidden" id="epub-find-bar">
       <input type="text" id="epub-find-input" placeholder="在本书中查找（当前章节）" autocomplete="off">
-      <button type="button" id="epub-find-prev"  data-tip="上一处" aria-label="上一处">>↑</button>
-      <button type="button" id="epub-find-next"  data-tip="下一处" aria-label="下一处">>↓</button>
+      <button type="button" id="epub-find-prev"  data-tip="上一处" aria-label="上一处">↑</button>
+      <button type="button" id="epub-find-next"  data-tip="下一处" aria-label="下一处">↓</button>
       <span id="epub-find-count"></span>
       <label title="区分大小写"><input type="checkbox" id="epub-find-case"> 区分</label>
-      <button type="button" id="epub-find-close"  data-tip="关闭查找" aria-label="关闭查找">>✕</button>
+      <button type="button" id="epub-find-close"  data-tip="关闭查找" aria-label="关闭查找">✕</button>
     </div>
     <div class="epub-body">
       <div class="epub-toc hidden" id="epub-toc"><!-- 章节列表由 app.js 动态生成 --></div>
@@ -439,12 +451,12 @@
       <div class="slides" id="slides-container"><!-- 每页 <section> 由 app.js 动态生成 --></div>
     </div>
     <div class="slides-bar">
-      <button id="slides-prev"  data-tip="上一页 (←)" aria-label="上一页 (←)">>‹</button>
+      <button id="slides-prev"  data-tip="上一页 (←)" aria-label="上一页 (←)">‹</button>
       <span id="slides-indicator">— / —</span>
-      <button id="slides-next"  data-tip="下一页 (→)" aria-label="下一页 (→)">>›</button>
+      <button id="slides-next"  data-tip="下一页 (→)" aria-label="下一页 (→)">›</button>
       <span class="divider"></span>
-      <button id="slides-export"  data-tip="导出为独立的自包含 HTML 文件" aria-label="导出为独立的自包含 HTML 文件">>导出</button>
-      <button id="slides-close" class="primary"  data-tip="退出演示 (Esc)" aria-label="退出演示 (Esc)">>✕ 退出</button>
+      <button id="slides-export"  data-tip="导出为独立的自包含 HTML 文件" aria-label="导出为独立的自包含 HTML 文件">导出</button>
+      <button id="slides-close" class="primary"  data-tip="退出演示 (Esc)" aria-label="退出演示 (Esc)">✕ 退出</button>
     </div>
   </div>
 
