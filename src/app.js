@@ -63,16 +63,16 @@
     prevfile:   { name:"上一个", kind:"action", value:"prevfile", title:"打开同目录下上一个受支持的文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>' },
     nextfile:   { name:"下一个", kind:"action", value:"nextfile", title:"打开同目录下下一个受支持的文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>' },
     save:       { name:"保存", kind:"action", value:"save", title:"保存（存回原文件）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>' },
-    saveas:     { name:"另存为", kind:"action", value:"saveas", title:"另存为…", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 21V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/><polyline points="9 13 12 16 15 13"/><line x1="12" y1="16" x2="12" y2="9"/></svg>' },
-    export:     { name:"导出", kind:"action", value:"export", title:"存成独立网页文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><polyline points="8 11 12 15 16 11"/><path d="M5 19h14"/></svg>' },
+    saveas:     { name:"另存为", kind:"action", value:"saveas", title:"另存副本", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 21V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/><polyline points="9 13 12 16 15 13"/><line x1="12" y1="16" x2="12" y2="9"/></svg>' },
+    export:     { name:"导出", kind:"action", value:"export", title:"导出为网页", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><polyline points="8 11 12 15 16 11"/><path d="M5 19h14"/></svg>' },
     clear:      { name:"清空", kind:"action", value:"clear", title:"清空草稿", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>' },
     undo:       { name:"撤销", kind:"action", value:"undo", title:"撤销", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>' },
     redo:       { name:"重做", kind:"action", value:"redo", title:"重做", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg>' },
     bold:       { name:"加粗", kind:"cmd", value:"bold", title:"加粗", label:'<b>B</b>' },
     italic:     { name:"斜体", kind:"cmd", value:"italic", title:"斜体", label:'<i>I</i>' },
-    underline:  { name:"下划线", kind:"cmd", value:"underline", title:"下划线", label:'<u>U</u>' },
-    forecolor:  { name:"文字颜色", kind:"action", value:"forecolor", title:"文字颜色（选中文字后点击取色）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><text x="12" y="16" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">A</text><line x1="5" y1="20" x2="9" y2="20" stroke="#ef4444" stroke-width="2.6"/><line x1="9.6" y1="20" x2="13.6" y2="20" stroke="#f59e0b" stroke-width="2.6"/><line x1="14.2" y1="20" x2="19" y2="20" stroke="#3b82f6" stroke-width="2.6"/></svg>' },
-    backcolor:  { name:"背景颜色", kind:"action", value:"backcolor", title:"背景颜色 / 高亮（选中文字后点击取色）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="13" width="15" height="4.5" rx="1.2" fill="#fde047" stroke="none"/><text x="12" y="17" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">A</text></svg>' },
+    underline:  { name:"下划线", kind:"cmd", value:"underline", title:"下划线（仅 HTML 文档，Markdown 不支持）", htmlOnly:true, label:'<u>U</u>' },
+    forecolor:  { name:"文字颜色", kind:"action", value:"forecolor", title:"文字颜色（仅 HTML 文档，Markdown 不支持）", htmlOnly:true, svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><text x="12" y="16" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">A</text><line x1="5" y1="20" x2="9" y2="20" stroke="#ef4444" stroke-width="2.6"/><line x1="9.6" y1="20" x2="13.6" y2="20" stroke="#f59e0b" stroke-width="2.6"/><line x1="14.2" y1="20" x2="19" y2="20" stroke="#3b82f6" stroke-width="2.6"/></svg>' },
+    backcolor:  { name:"背景颜色", kind:"action", value:"backcolor", title:"背景颜色 / 高亮（仅 HTML 文档，Markdown 不支持）", htmlOnly:true, svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="13" width="15" height="4.5" rx="1.2" fill="#fde047" stroke="none"/><text x="12" y="17" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">A</text></svg>' },
     H1:         { name:"标题 1", kind:"block", value:"H1", title:"一级标题", label:'1' },
     H2:         { name:"标题 2", kind:"block", value:"H2", title:"二级标题", label:'2' },
     H3:         { name:"标题 3", kind:"block", value:"H3", title:"三级标题", label:'3' },
@@ -86,7 +86,7 @@
     BLOCKQUOTE: { name:"引用块", kind:"block", value:"BLOCKQUOTE", title:"引用块", svg:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 7h4v6H7v2H5V9a2 2 0 0 1 2-2zm8 0h4v6h-4v2h-2V9a2 2 0 0 1 2-2z" transform="scale(0.9) translate(1 1)"/></svg>' },
     link:       { name:"链接", kind:"action", value:"link", title:"插入/编辑链接", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></svg>' },
     image:      { name:"图片", kind:"action", value:"image", title:"插入图片", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M21 16l-5-5L5 20"/></svg>' },
-    video:      { name:"视频", kind:"action", value:"video", title:"插入视频 / 嵌入播放器", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><polygon points="10 9 15 12 10 15" fill="currentColor" stroke="none"/></svg>' },
+    video:      { name:"视频", kind:"action", value:"video", title:"插入视频 / 嵌入播放器（仅 HTML 文档，Markdown 不支持）", htmlOnly:true, svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><polygon points="10 9 15 12 10 15" fill="currentColor" stroke="none"/></svg>' },
     table:      { name:"表格", kind:"action", value:"table", title:"插入表格 (3×3)", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="1.5"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/></svg>' },
     code:       { name:"代码块", kind:"action", value:"code", title:"插入代码块", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 7 4 12 8 17"/><polyline points="16 7 20 12 16 17"/></svg>' },
     hr:         { name:"分割线", kind:"action", value:"hr", title:"插入分割线", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="12" x2="20" y2="12"/></svg>' },
@@ -140,15 +140,23 @@
     return { order: order, hidden: hidden };
   }
 
-  /** 当前可见工具栏项的统一数据源（顺序 + 显隐 + 分隔符），renderToolbar 与迷你预览共用 */
+  /** 当前是否在编辑 Markdown 文档（含未保存的 md 新文档） */
+  function isMarkdownDoc() {
+    return !!(currentFile && currentFile.kind === "markdown");
+  }
+
+  /** 当前可见工具栏项的统一数据源（顺序 + 显隐 + 分隔符），renderToolbar 共用 */
   function visibleTokens() {
     const cfg = getToolbarConfig();
+    const md = isMarkdownDoc();
     const out = [];
     cfg.order.forEach(function (token) {
       if (token === "__divider__") { out.push({ divider: true }); return; }
       const item = TOOLBAR_ITEMS[token];
       if (!item) return;
       if (cfg.hidden[token] && !item.keep && item.kind !== "zoomlabel") return;
+      // Markdown 下隐藏"存不进 .md"的按钮（下划线/颜色/视频，htmlOnly:true），打开 HTML 时恢复显示
+      if (md && item.htmlOnly) return;
       out.push({ token: token, item: item, keep: !!item.keep });
     });
     return out;
@@ -567,6 +575,10 @@
    * kind ∈ "html" | "markdown"。为 null 时表示空白草稿（保存走"另存为"）。
    */
   let currentFile = null;
+  /* 关闭保护：savedSignature = 最近一次"打开/保存"时内容的签名（与 contentSignature 同表示），
+   * 关窗前对比二者判断是否有未保存修改；closeBypass 供"直接关闭"跳过守卫 */
+  let savedSignature = "";
+  let closeBypass = false;
   let siblingFiles = [];   // 同目录受支持文件列表（按文件名自然排序，全路径）
   let siblingIndex = -1;   // 当前文件在 siblingFiles 中的下标（-1 表示不在列表中）
   /** 缓存源模板：已加载 html 文件的 <head> 内部 HTML（已剥离 script/on*） */
@@ -762,6 +774,7 @@
     lastWasCommand = true;
     updatePlaceholder();
     scheduleAutosave();
+    if (splitMode) scheduleSyncEditorToSource(); // 撤销/重做后同步源码栏
     setTimeout(function () { suppressInput = false; }, 0);
   }
 
@@ -1297,6 +1310,7 @@
     commitHistory();
     updatePlaceholder();
     scheduleAutosave();
+    if (splitMode) scheduleSyncEditorToSource(); // 手动 DOM 插入不触发 input，需显式同步
   }
   function insertAtCaretSource(text) {
     const s = sourceView.selectionStart || 0;
@@ -1316,13 +1330,20 @@
    * ===================================================================== */
   function buildExportDocument() {
     const content = editor.innerHTML;
+    // 网页标题跟随当前文件名（无文件时退回"导出文档"）
+    let pageTitle = "导出文档";
+    if (currentFile && currentFile.path) {
+      const _n = currentFile.path.split(/[\\/]/).pop() || "";
+      const _stem = _n.replace(/\.[^.]+$/, "").trim();
+      if (_stem) pageTitle = _stem;
+    }
     return (
       '<!DOCTYPE html>\n' +
       '<html lang="zh-CN">\n' +
       "<head>\n" +
       '<meta charset="UTF-8">\n' +
       '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
-      "<title>导出文档</title>\n" +
+      "<title>" + pageTitle + "</title>\n" +
       "<style>\n" +
       "  body{font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto," +
       "\"Helvetica Neue\",Arial,\"PingFang SC\",\"Microsoft YaHei\",sans-serif;" +
@@ -1863,32 +1884,36 @@
     return "\n" + lines.join("\n") + "\n";
   }
 
+  /** 初始化 turndown（规则与 serializeMarkdown 完全一致；懒加载，供分栏块级映射复用） */
+  function ensureTurndownService() {
+    if (turndownService || !window.TurndownService) return;
+    turndownService = new window.TurndownService({
+      headingStyle: "atx",
+      codeBlockStyle: "fenced",
+      bulletListMarker: "-",
+    });
+    // 非编辑岛（Mermaid / KaTeX）回写为围栏代码块，保证往返零损失
+    turndownService.addRule("mdDynamicBlock", {
+      filter: function (node) {
+        return node.nodeName === "DIV" && node.classList && node.classList.contains("md-block");
+      },
+      replacement: function (content, node) {
+        const lang = node.getAttribute("data-md-lang") || "";
+        const src = (node.getAttribute("data-md-source") || "").replace(/\n+$/, "");
+        return "\n\n```" + lang + "\n" + src + "\n```\n\n";
+      },
+    });
+    // GFM 表格：整表直接转写，避免 turndown 默认行为丢失结构
+    turndownService.addRule("gfmTable", {
+      filter: "table",
+      replacement: function (content, node) { return tableToMd(node); },
+    });
+  }
+
   /** 把编辑区内容序列化为 Markdown 文本（turndown） */
   function serializeMarkdown() {
     if (!window.TurndownService) return editor.innerHTML; // 退化
-    if (!turndownService) {
-      turndownService = new window.TurndownService({
-        headingStyle: "atx",
-        codeBlockStyle: "fenced",
-        bulletListMarker: "-",
-      });
-      // 非编辑岛（Mermaid / KaTeX）回写为围栏代码块，保证往返零损失
-      turndownService.addRule("mdDynamicBlock", {
-        filter: function (node) {
-          return node.nodeName === "DIV" && node.classList && node.classList.contains("md-block");
-        },
-        replacement: function (content, node) {
-          const lang = node.getAttribute("data-md-lang") || "";
-          const src = (node.getAttribute("data-md-source") || "").replace(/\n+$/, "");
-          return "\n\n```" + lang + "\n" + src + "\n```\n\n";
-        },
-      });
-      // GFM 表格：整表直接转写，避免 turndown 默认行为丢失结构
-      turndownService.addRule("gfmTable", {
-        filter: "table",
-        replacement: function (content, node) { return tableToMd(node); },
-      });
-    }
+    ensureTurndownService();
     return turndownService.turndown(editor.innerHTML);
   }
 
@@ -1901,6 +1926,17 @@
     const mText = (md || "").replace(/\s+/g, "");
     if (!hText.length) return 0;
     return (hText.length - mText.length) / hText.length;
+  }
+
+  /** 检测编辑区中 Markdown 表达不了的格式（保存 .md 后重新打开会丢失），返回中文名列表 */
+  function detectMdFormatLoss() {
+    const html = editor.innerHTML;
+    const out = [];
+    if (/<u[\s>]/i.test(html) || /text-decoration[^;">]*underline/i.test(html) || /<font\b/i.test(html)) out.push("下划线");
+    if (/<span[^>]*style="[^"]*(color|background)[^"]*"/i.test(html)) out.push("颜色/高亮");
+    if (/<video\b/i.test(html)) out.push("视频");
+    if (/<iframe\b/i.test(html)) out.push("嵌入网页");
+    return out;
   }
 
   /* ============================ Markdown 动态块（Mermaid / KaTeX 非编辑岛） ============================ */
@@ -1984,6 +2020,7 @@
 
   /** 载入 / 同步后统一收尾：渲染动态块 + 关闭代码拼写 */
   function refreshAfterRender() {
+    invalidateSplitMap(); // 编辑区 DOM 整体重建（打开文件/撤销重做）后映射失效
     renderMdDynamicBlocks(editor).catch(function () {});
     applySpellcheckExceptions(editor);
   }
@@ -2001,7 +2038,7 @@
     if (olBtn) olBtn.classList.remove("active");
   }
   function toggleMdOutline() {
-    if (!currentFile || currentFile.kind !== "markdown") { toast("大纲仅对 Markdown 文档可用"); return; }
+    if (!currentFile || currentFile.kind !== "markdown") { showToast("大纲仅对 Markdown 文档可用"); return; }
     const open = editorWrap.classList.toggle("outline-open");
     if (mdOutline) mdOutline.classList.toggle("hidden", !open);
     const olBtn = toolbar.querySelector('[data-action="outline"]');
@@ -2129,14 +2166,18 @@
     if (sourceMode) exitSourceMode();
     else if (splitMode) exitSplitMode();
     currentFile = { path: res.path, kind: res.kind };
+    renderToolbar();   // 文档类型可能切换（md↔html），重算 htmlOnly 按钮显隐
     setFilePath(res.path, true);
     refreshSiblings();
     if (res.kind === "markdown") {
       loadMarkdown(res.content);
+      savedSignature = serializeMarkdown();   // 以 turndown 序列化结果为基线（与 contentSignature 同表示）
     } else if (res.kind === "svg") {
       loadSvg(res.content);
+      savedSignature = res.content;           // SVG 源码即真相
     } else {
       loadHtmlDocument(res.content);
+      savedSignature = editor.innerHTML;      // 浏览器规范化后的 innerHTML（与 contentSignature 同表示）
     }
   }
 
@@ -2475,7 +2516,7 @@
       content = serializeMarkdown();
       const loss = estimateMdTextLoss(editor.innerHTML, content);
       if (loss > 0.15) {
-        toast("⚠️ 保存的 MD 可能丢失约 " + Math.round(loss * 100) + "% 文本，建议另存备份核对");
+        showToast("⚠️ 保存的 MD 可能丢失约 " + Math.round(loss * 100) + "% 文本，建议另存备份核对");
         setStatus("⚠️ MD 往返可能丢失内容，已照常保存：" + path, true);
       }
     } else if (kind === "svg") {
@@ -2487,8 +2528,17 @@
       const enc = (getConfig().defaultEncoding || "") || undefined;
       await tauriInvoke("save_file", { path, kind, content, encoding: enc });
       setStatus("已保存：" + path);
+      savedSignature = contentSignature();   // 关闭保护基线：以"刚落盘的内容"为准
+      if (kind === "markdown") {
+        const lossy = detectMdFormatLoss();
+        if (lossy.length) {
+          showToast("已保存。Markdown 不支持：" + lossy.join("、") + "，重新打开会丢失");
+        }
+      }
+      return { ok: true, content: content };   // 供另存为做跨格式重载
     } catch (e) {
       setStatus("保存失败：" + e, true);
+      return { ok: false, content: null };
     }
   }
 
@@ -2510,39 +2560,96 @@
     // PDF 模式下，另存为走 PDF 模块（把旋转/备注/水印/签章一并烤进新文件）
     if (window.__pdfActive && window.PDFApp && window.PDFApp.saveAs) { window.PDFApp.saveAs(); return; }
     if (!TAURI) { setStatus("当前环境不支持保存对话框。", true); return; }
+    // 源码模式下右侧是唯一真相：先回填编辑区再序列化，防止另存内容陈旧
+    if (sourceMode) applySourceToEditor();
+    // 过滤器按当前文档格式动态排序：Windows 对话框默认选中首个过滤器，
+    // 因此把"正在编辑的格式"放首位——打开 md 默认存 md，打开 html 默认存 html；
+    // 未打开/空白文档默认 md（日常以写 md 为主）。
+    const _curKind = (currentFile && currentFile.kind) || "markdown";
+    const _allFilters = [
+      { name: "Markdown", extensions: ["md"], k: "markdown" },
+      { name: "HTML", extensions: ["html"], k: "html" },
+      { name: "SVG", extensions: ["svg"], k: "svg" },
+      { name: "PDF", extensions: ["pdf"], k: "pdf" },
+    ].sort(function (a, b) { return (a.k === _curKind ? -1 : 1) - (b.k === _curKind ? -1 : 1); })
+     .map(function (f) { return { name: f.name, extensions: f.extensions }; });
     let path;
     try {
-      path = await tauriSave({
-        filters: [
-          { name: "HTML", extensions: ["html"] },
-          { name: "Markdown", extensions: ["md"] },
-          { name: "SVG", extensions: ["svg"] },
-          { name: "PDF", extensions: ["pdf"] },
-        ],
-      });
+      path = await tauriSave({ filters: _allFilters });
     } catch (e) {
       setStatus("保存失败：" + e, true);
       return;
     }
     if (!path) return;
     if (/\.pdf$/i.test(path)) { await exportEditorPDF(path); return; }
-    // 自动补全扩展名：用户未输入扩展名时按当前文档类型补齐，免去手动输入（Windows 保存框未自动补时兜底）
+    // 自动补全扩展名：用户未输入扩展名时按当前文档类型补齐（Windows 保存框未自动补时兜底）。
+    // 未打开任何文档时默认补 .md（日常以写 md 为主）；html 文档另存仍补 .html。
     const _base = path.split(/[\\/]/).pop();
     if (!/\./.test(_base)) {
       const _ext = (currentFile && currentFile.kind === "markdown") ? ".md"
                  : (currentFile && currentFile.kind === "svg") ? ".svg"
-                 : ".html";
+                 : (currentFile && currentFile.kind === "html") ? ".html"
+                 : ".md";
       path += _ext;
     }
     const kind = detectKindFromPath(path);
+    // md → html 特例：不切换编辑对象（md 渲染成的 html 没有继续编辑的价值），
+    // 而是写一份带排版样式的独立网页（与「导出」同产物），当前文档仍是 .md。
+    // 未保存的新草稿除外——用户正在给文档命名，按真正的转格式处理。
+    if (kind === "html" && currentFile && currentFile.kind === "markdown" && currentFile.path) {
+      try {
+        const enc = (getConfig().defaultEncoding || "") || undefined;
+        await tauriInvoke("save_file", { path, kind: "html", content: buildExportDocument(), encoding: enc });
+        showToast("已存为独立网页，当前仍编辑原 Markdown 文档");
+      } catch (e) {
+        setStatus("保存失败：" + e, true);
+      }
+      return;
+    }
+    const prevKind = currentFile ? currentFile.kind : null;
     currentFile = { path, kind };
+    renderToolbar();   // 另存为可能改类型（如草稿存成 html），重算 htmlOnly 按钮显隐
     // 同步首屏路径指示与"打开位置"按钮（否则另存为之后仍显示"未打开文件"且按钮灰掉）
     setFilePath(path, true);
-    try {
-      const name = path.split(/[\\/]/).pop() || path;
-      document.title = name + " · 墨笺";
-    } catch (e) {}
-    await saveFileWithContent(path, kind);
+    const name = path.split(/[\\/]/).pop() || path;
+    const r = await saveFileWithContent(path, kind);
+    // 跨格式另存（如 html→md）：当前窗口接管新文件身份，按新格式重载视图。
+    // 不重载的话：分栏右侧还是按旧格式填的源码、工具栏重渲染后 active 态丢失。
+    // （md→html 特例已在上面提前返回；md→md / html→html 同格式无需重载。）
+    if (r && r.ok && prevKind && prevKind !== kind) {
+      if (kind === "svg" && prevKind !== "svg") {
+        // 内容不是 SVG 源码（是 md/html 文本），存出的 .svg 无法正常预览，仅提示不重载
+        showToast("已按原文本存为 .svg，但内容并非 SVG 源码，图形预览可能为空");
+      } else {
+        reloadAfterTranscode(kind, r.content);
+        setFilePath(path, true);   // 重载内部可能重置路径指示，这里再钉一次
+      }
+    }
+    // 标题放重载之后：loadMarkdown 会把标题重置回「墨笺」
+    try { document.title = name + " · 墨笺"; } catch (e) {}
+  }
+
+  /** 跨格式另存后按新格式重载视图：等价于"重新打开刚存的文件"，但保留用户当前的
+   *  分栏 / 原文视图模式。内容以刚落盘的文本为准（新格式下的规范形态）。 */
+  function reloadAfterTranscode(kind, content) {
+    const wasSplit = splitMode, wasSource = sourceMode;
+    if (sourceMode) exitSourceMode();
+    else if (splitMode) exitSplitMode();
+    if (kind === "markdown") {
+      loadMarkdown(content);
+      savedSignature = content;
+    } else if (kind === "svg") {
+      loadSvg(content);        // 内部已进入分栏（左预览右源码）
+      savedSignature = content;
+    } else {
+      loadHtmlDocument(content);
+      savedSignature = editor.innerHTML;
+    }
+    if (kind !== "svg") {
+      if (wasSplit) enterSplitMode();
+      else if (wasSource) enterSourceMode();
+    }
+    invalidateSplitMap();
   }
 
   /** 另存为 PDF：复用浏览器打印管线（与 PDF 模块 printPdf 同机制），
@@ -2711,6 +2818,7 @@
   function enterSplitMode() {
     if (splitMode) return;
     if (sourceMode) exitSourceMode();
+    invalidateSplitMap(); // 重新进入分栏：块级映射按当前内容重建
     let src;
     if (currentFile && currentFile.kind === "markdown") src = serializeMarkdown();
     else if (currentFile && currentFile.kind === "svg") src = sourceView.value;
@@ -2772,17 +2880,24 @@
   }
 
   async function confirmNewFile(kind) {
-    const hasContent =
-      editor.textContent.replace(/ /g, "").trim() !== "" ||
-      editor.querySelector("img,table,hr,pre,blockquote,ul,ol");
-    if (hasContent) {
-      const ok = await uiConfirm("当前内容尚未保存，确定新建文档吗？");
-      if (!ok) return;
+    // 新建一律开新窗口实例：当前窗口内容原样保留，不再就地清空。
+    // Rust 侧 open_new_instance 收到 newKind 后注入 window.__NEW_KIND__，
+    // 新窗口 init 按空白文档启动（跳过 argv 文件关联，避免误读进程参数）。
+    if (TAURI_CORE) {
+      try {
+        await tauriInvoke("open_new_instance", { path: "", newKind: kind });
+        setStatus("已在新窗口新建" + (kind === "html" ? " HTML 文档" : " Markdown 文档"));
+      } catch (e) {
+        setStatus("新建窗口失败：" + e, true);
+      }
+      return;
     }
+    // 无 Tauri（浏览器 / 无头测试环境）退回旧的就地清空行为
     if (sourceMode) exitSourceMode();
     editor.contentEditable = "true";
     editor.innerHTML = "";
     currentFile = { path: null, kind: kind };
+    renderToolbar();   // md↔html 新建切换，重算 htmlOnly 按钮显隐
     loadedHead = "";
     loadedTitle = "";
     document.title = "墨笺";
@@ -2833,6 +2948,76 @@
     });
   }
   if (folderBtn) folderBtn.addEventListener("click", openContainingFolder);
+
+  /* =====================================================================
+   * 关闭保护：有未保存修改时拦截关窗，弹「保存并关闭 / 直接关闭 / 取消」
+   * ===================================================================== */
+  function currentWindow() {
+    try {
+      return (TAURI.window && TAURI.window.getCurrentWindow) ? TAURI.window.getCurrentWindow() : null;
+    } catch (e) { return null; }
+  }
+
+  /** 当前内容签名（与 savedSignature 同一表示，可直接对比）；
+   *  PDF / EPUB 模式有各自的保存语义，返回 null 跳过守卫 */
+  function contentSignature() {
+    if (!currentFile || window.__pdfActive || window.__epubActive) return null;
+    if (currentFile.kind === "svg") return sourceView.value;   // SVG 源码即真相
+    if (sourceMode) return sourceView.value;                    // 源码模式下右侧是唯一真相
+    if (currentFile.kind === "markdown") return serializeMarkdown();
+    return editor.innerHTML;
+  }
+
+  function hasUnsavedChanges() {
+    if (closeBypass) return false;
+    const sig = contentSignature();
+    if (sig === null) return false;
+    return sig !== savedSignature;
+  }
+
+  /** 注册关窗拦截：无修改直接放行（不 preventDefault 即默认关闭）；
+   *  有修改则弹确认框。注册失败（旧运行时）时静默退化为系统默认行为。 */
+  function setupCloseGuard() {
+    const win = currentWindow();
+    if (!win || !win.onCloseRequested) return;
+    try {
+      win.onCloseRequested(async function (event) {
+        if (!hasUnsavedChanges()) return;
+        event.preventDefault();
+        const cd = document.getElementById("close-dialog");
+        if (cd) openModal(cd);
+      });
+    } catch (e) {}
+  }
+
+  function destroyCurrentWindow() {
+    closeBypass = true;   // destroy 不再触发 onCloseRequested，标志位双保险
+    const win = currentWindow();
+    if (win && win.destroy) win.destroy();
+  }
+
+  /* 关闭确认弹窗接线 */
+  const closeDialog = document.getElementById("close-dialog");
+  if (closeDialog) {
+    const cc = document.getElementById("close-cancel");
+    const cdx = document.getElementById("close-discard");
+    const cs = document.getElementById("close-save");
+    if (cc) cc.addEventListener("click", function () { closeModal(closeDialog); });
+    if (cdx) cdx.addEventListener("click", function () {
+      closeModal(closeDialog);
+      destroyCurrentWindow();
+    });
+    if (cs) cs.addEventListener("click", async function () {
+      // 保存并关闭：写回成功（签名一致）才真正关窗；另存对话框被取消则留在编辑器
+      if (currentFile && currentFile.path) await saveFile();
+      else await saveFileAs();
+      if (!hasUnsavedChanges()) {
+        closeModal(closeDialog);
+        destroyCurrentWindow();
+      }
+    });
+    closeDialog.addEventListener("click", function (e) { if (e.target === closeDialog) closeModal(closeDialog); });
+  }
 
   /* =====================================================================
    * 主题切换（持久化到配置文件）
@@ -3191,6 +3376,7 @@
     restoreSelection();
     document.execCommand("styleWithCSS", false, true);
     runCommand("foreColor", color);
+    document.execCommand("styleWithCSS", false, false); // 复位：否则后续加粗/斜体也变成 span 样式，md 保存会静默丢失
   }
 
   /** 给选中文字加背景色（高亮）；Chromium 用 hiliteColor，退化用 backColor */
@@ -3199,6 +3385,7 @@
     document.execCommand("styleWithCSS", false, true);
     const applied = document.execCommand("hiliteColor", false, color);
     if (!applied) document.execCommand("backColor", false, color);
+    document.execCommand("styleWithCSS", false, false); // 复位（同上）
     commitHistory();
     updateToolbarState();
   }
@@ -3215,8 +3402,12 @@
   }
 
   editor.addEventListener("input", function () {
+    invalidateSplitMap(); // 内容变化后块级映射失效
     if (suppressInput) {
       suppressInput = false;
+      // execCommand 路径（工具栏格式命令 / 粘贴 / Ctrl+B 等）：历史已由调用方记录，
+      // 但分栏源码栏仍需同步——否则格式变化要等下次敲键（回车）才在右栏出现
+      if (splitMode) scheduleSyncEditorToSource();
       return;
     }
     recordInput();
@@ -3235,10 +3426,13 @@
     clearTimeout(syncToSourceTimer);
     syncToSourceTimer = setTimeout(function () {
       suppressSourceInput = true;
+      // 保留源码栏滚动位置：写入 value 会重置 scrollTop，用户在右栏滚动查看时会被弹回顶部
+      const keepTop = sourceView.scrollTop;
       sourceView.value = (currentFile && currentFile.kind === "markdown")
         ? serializeMarkdown()
         : (currentFile && currentFile.kind === "svg") ? sourceView.value
         : editor.innerHTML;
+      sourceView.scrollTop = keepTop;
       setTimeout(function () { suppressSourceInput = false; }, 0);
     }, 300);
   }
@@ -3266,6 +3460,282 @@
     }, 300);
   }
 
+  /* =====================================================================
+   * 分栏联动：编辑位置 ↔ 源码位置（仅 Markdown 文档）
+   * 映射原理：对编辑区每个顶层块单独 turndown 得到片段，按文档顺序在源码
+   * 文本中顺序 indexOf，得到每个块在源码中的精确 [start,end) 区间；任一侧
+   * 内容变化即失效重建。光标移动与滚动双向跟随，程序滚动用时间窗防回环。
+   * ===================================================================== */
+  let splitMapCache = null;
+  let splitLinkBusyUntil = 0;
+  let linkEditorCaretTimer = null;
+  let linkSourceCaretTimer = null;
+  let linkEditorScrollTimer = null;
+  let linkSourceScrollTimer = null;
+
+  function invalidateSplitMap() { splitMapCache = null; }
+
+  function splitLinkEnabled() {
+    return splitMode && !window.__pdfActive && !window.__epubActive &&
+      currentFile && currentFile.kind === "markdown" && window.TurndownService;
+  }
+
+  function buildSplitMap() {
+    if (!splitLinkEnabled()) return null;
+    if (splitMapCache) return splitMapCache;
+    const mdText = sourceView.value || "";
+    const map = [];
+    if (mdText) {
+      ensureTurndownService();
+      let from = 0;
+      Array.prototype.forEach.call(editor.children, function (node) {
+        if (node.nodeType !== Node.ELEMENT_NODE) return;
+        let frag = null;
+        try { frag = turndownService.turndown(node.outerHTML); } catch (e) { frag = null; }
+        if (frag == null) return;
+        frag = frag.replace(/^\s+|\s+$/g, "");
+        if (!frag) return;
+        const idx = mdText.indexOf(frag, from);
+        if (idx >= 0) {
+          map.push({ node: node, start: idx, end: idx + frag.length });
+          from = idx + frag.length;
+        }
+      });
+    }
+    splitMapCache = map;
+    return map;
+  }
+
+  /** 光标所在（或最近）的编辑器顶层块 */
+  function caretBlockInEditor() {
+    const sel = window.getSelection();
+    if (!sel || !sel.anchorNode || !editor.contains(sel.anchorNode)) return null;
+    let node = sel.anchorNode.nodeType === Node.TEXT_NODE
+      ? sel.anchorNode.parentElement : sel.anchorNode;
+    while (node && node.parentElement !== editor) node = node.parentElement;
+    return node;
+  }
+
+  /** 源码栏滚到文本偏移处；onlyIfOutside=true 时已在舒适视野内则不动 */
+  function splitScrollSourceTo(offset, onlyIfOutside) {
+    const y = caretTopInTextarea(sourceView, offset);
+    const st = sourceView.scrollTop, h = sourceView.clientHeight;
+    if (onlyIfOutside && y >= st + h * 0.08 && y <= st + h * 0.85) return;
+    splitLinkBusyUntil = Date.now() + 300;
+    sourceView.scrollTop = Math.max(0, y - h / 3);
+  }
+
+  /** 编辑区滚到某顶层块 */
+  function splitScrollEditorTo(node) {
+    if (!node || !editor.contains(node)) return;
+    const er = editor.getBoundingClientRect();
+    const rel = node.getBoundingClientRect().top - er.top;
+    const h = editor.clientHeight;
+    if (rel >= h * 0.08 && rel <= h * 0.85) return;
+    splitLinkBusyUntil = Date.now() + 300;
+    editor.scrollTop = Math.max(0, editor.scrollTop + rel - h / 3);
+  }
+
+  function mapEntryForNode(map, node) {
+    for (let i = 0; i < map.length; i++) if (map[i].node === node) return map[i];
+    return null;
+  }
+
+  function mapEntryForOffset(map, pos) {
+    for (let i = 0; i < map.length; i++) {
+      if (pos >= map[i].start && pos <= map[i].end) return map[i];
+    }
+    for (let i = 0; i < map.length; i++) {       // 落在块间隙：取后一个块
+      if (map[i].start > pos) return map[i];
+    }
+    return map.length ? map[map.length - 1] : null;
+  }
+
+  /** 源码 scrollTop+目标行 → 近似文本偏移（caretTopInTextarea 单调，二分） */
+  function sourcePosAtY(y) {
+    let lo = 0, hi = sourceView.value.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (caretTopInTextarea(sourceView, mid) < y) lo = mid + 1; else hi = mid;
+    }
+    return lo;
+  }
+
+  /* 左 → 右：编辑器光标移动（打字/点击/方向键）跟随 */
+  document.addEventListener("selectionchange", function () {
+    if (!splitLinkEnabled() || document.activeElement !== editor) return;
+    clearTimeout(linkEditorCaretTimer);
+    linkEditorCaretTimer = setTimeout(function () {
+      const map = buildSplitMap();
+      if (!map || !map.length) return;
+      const node = caretBlockInEditor();
+      if (!node) return;
+      const entry = mapEntryForNode(map, node);
+      if (entry) splitScrollSourceTo(entry.start, true);
+    }, 200);
+  });
+
+  /* 左 → 右：编辑器滚动跟随（滚轮翻页） */
+  editor.addEventListener("scroll", function () {
+    if (!splitLinkEnabled() || Date.now() < splitLinkBusyUntil) return;
+    clearTimeout(linkEditorScrollTimer);
+    linkEditorScrollTimer = setTimeout(function () {
+      const map = buildSplitMap();
+      if (!map || !map.length) return;
+      const er = editor.getBoundingClientRect();
+      const line = editor.clientHeight / 3;
+      let anchor = null;
+      for (let i = 0; i < map.length; i++) {
+        if (map[i].node.getBoundingClientRect().top - er.top <= line) anchor = map[i];
+        else break;
+      }
+      if (!anchor) anchor = map[0];
+      splitScrollSourceTo(anchor.start, false);
+    }, 120);
+  });
+
+  /* 右 → 左：源码光标移动（点击/方向键）跟随 */
+  ["keyup", "mouseup"].forEach(function (evt) {
+    sourceView.addEventListener(evt, function () {
+      if (!splitLinkEnabled()) return;
+      clearTimeout(linkSourceCaretTimer);
+      linkSourceCaretTimer = setTimeout(function () {
+        const map = buildSplitMap();
+        if (!map || !map.length) return;
+        const entry = mapEntryForOffset(map, sourceView.selectionStart || 0);
+        if (entry) splitScrollEditorTo(entry.node);
+      }, 250);
+    });
+  });
+
+  /* 右 → 左：源码滚动跟随（滚轮翻页） */
+  sourceView.addEventListener("scroll", function () {
+    if (!splitLinkEnabled() || Date.now() < splitLinkBusyUntil) return;
+    clearTimeout(linkSourceScrollTimer);
+    linkSourceScrollTimer = setTimeout(function () {
+      const map = buildSplitMap();
+      if (!map || !map.length) return;
+      const y = sourceView.scrollTop + sourceView.clientHeight / 3;
+      const entry = mapEntryForOffset(map, sourcePosAtY(y));
+      if (entry) splitScrollEditorTo(entry.node);
+    }, 120);
+  });
+
+  /* ============================ 分栏光标联动：左渲染 ↔ 右源码 ============================
+   * 模型：跟随光标——哪边获得焦点/光标移动，对面栏滚到对应位置（只滚动、不抢焦点）。
+   * 映射用"文本锚点"：取光标所在顶层块的纯文本（压缩空白），到对面全文里搜首处出现。
+   * 优点：对 turndown 往返差异、软换行、表格/嵌套列表都稳健，内容变后每次实时重查、自愈。
+   * 程序化 scrollTop 赋值不触发 selectionchange，天然无回环。 */
+  let caretSyncTimer = null;
+  function scheduleCaretSync(fromEditor) {
+    if (!splitMode) return;
+    if (currentFile && currentFile.kind === "svg") return; // svg 左侧只读预览，无光标语义
+    clearTimeout(caretSyncTimer);
+    caretSyncTimer = setTimeout(function () { runCaretSync(fromEditor); }, 200);
+  }
+  function runCaretSync(fromEditor) {
+    try {
+      if (fromEditor) syncCaretToSource();
+      else syncCaretToEditor();
+    } catch (e) { /* 联动是增强体验，任何异常静默忽略 */ }
+  }
+  /** 压缩空白键：源码里的 | 、多余空格与块文本 textContent 之间的差异全部抹平 */
+  function normKey(s) { return String(s).replace(/\s+/g, ""); }
+
+  /** 源码的"去空白"副本缓存 + 每字符在原文中的下标映射（键空间匹配后回映射到原始偏移） */
+  let normSrcCache = { raw: null, norm: "", map: null };
+  function normSourceIndex() {
+    if (normSrcCache.raw === sourceView.value) return normSrcCache;
+    const src = sourceView.value;
+    const map = new Array(src.length);
+    let norm = "";
+    for (let i = 0; i < src.length; i++) {
+      const ch = src[i];
+      if (/\s/.test(ch)) continue;
+      map[norm.length] = i;
+      norm += ch;
+    }
+    normSrcCache = { raw: src, norm: norm, map: map };
+    return normSrcCache;
+  }
+
+  /** 就近匹配：内容有重复时优先取离上次同步位置最近的命中 */
+  let lastCaretMatchNorm = -1;
+  function findNearest(hay, needle, preferIdx) {
+    if (preferIdx == null || preferIdx < 0) return hay.indexOf(needle);
+    const fwd = hay.indexOf(needle, Math.max(0, preferIdx - needle.length));
+    const back = hay.lastIndexOf(needle, preferIdx);
+    if (fwd >= 0 && back >= 0) return (fwd - preferIdx <= preferIdx - back) ? fwd : back;
+    return fwd >= 0 ? fwd : back;
+  }
+
+  /** 左 → 右：光标所在顶层块 → 在源码中定位（渐进放宽匹配长度）→ 滚动居中 */
+  function syncCaretToSource() {
+    const sel = window.getSelection();
+    if (!sel || !sel.anchorNode || !editor.contains(sel.anchorNode)) return;
+    let node = sel.anchorNode.nodeType === Node.TEXT_NODE ? sel.anchorNode.parentElement : sel.anchorNode;
+    let block = null;
+    while (node && node !== editor) {
+      if (node.parentElement === editor) { block = node; break; }
+      node = node.parentElement;
+    }
+    if (!block) return;
+    const key = normKey(block.textContent || "");
+    if (!key) return;
+    const ns = normSourceIndex();
+    let idx = -1;
+    const tries = [key, key.slice(0, 24), key.slice(0, 10)];
+    for (let i = 0; i < tries.length && idx < 0; i++) {
+      if (!tries[i]) continue;
+      idx = findNearest(ns.norm, tries[i], lastCaretMatchNorm);
+    }
+    if (idx < 0) return;
+    lastCaretMatchNorm = idx;
+    const rawIdx = ns.map[idx];
+    const y = caretTopInTextarea(sourceView, rawIdx);
+    sourceView.scrollTop = Math.max(0, y - sourceView.clientHeight / 2);
+  }
+
+  /** 右 → 左：光标所在行 → 剥 markdown/html 标记 → 找渲染块 → 滚到视口上 1/3 处 */
+  let lastCaretBlockIdx = -1;
+  function syncCaretToEditor() {
+    const pos = sourceView.selectionStart || 0;
+    const src = sourceView.value;
+    const lineStart = src.lastIndexOf("\n", pos - 1) + 1;
+    let lineEnd = src.indexOf("\n", pos);
+    if (lineEnd < 0) lineEnd = src.length;
+    const key = normKey(
+      src.slice(lineStart, lineEnd)
+        .replace(/<[^>]+>/g, "")
+        .replace(/^\s{0,3}(#{1,6}|>|[-*+]\s|\d+\.\s)/, "")
+        .replace(/[*_`~]/g, "")
+        .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    ).slice(0, 24);
+    if (!key) return;
+    // 就近优先：从上次命中的块向两侧扩展搜索（重复文本场景取离上次位置最近的块）
+    const kids = editor.children;
+    let block = null;
+    const n = kids.length;
+    const start = lastCaretBlockIdx >= 0 && lastCaretBlockIdx < n ? lastCaretBlockIdx : 0;
+    for (let d = 0; d < n && !block; d++) {
+      const i = start + d; if (i < n && normKey(kids[i].textContent || "").indexOf(key) >= 0) { block = kids[i]; lastCaretBlockIdx = i; break; }
+      const j = start - d; if (j >= 0 && j !== i && normKey(kids[j].textContent || "").indexOf(key) >= 0) { block = kids[j]; lastCaretBlockIdx = j; break; }
+    }
+    if (!block) return;
+    const er = editor.getBoundingClientRect();
+    const br = block.getBoundingClientRect();
+    const target = editor.scrollTop + (br.top - er.top) - editor.clientHeight * 0.3;
+    editor.scrollTop = Math.max(0, target);
+  }
+
+  // selectionchange 驱动：编辑器/源码栏获得焦点并移动光标时各自动对面栏。
+  // 我们的程序化滚动只改 scrollTop，不产生 selectionchange，故不会互相触发死循环。
+  document.addEventListener("selectionchange", function () {
+    const ae = document.activeElement;
+    if (ae === editor) scheduleCaretSync(true);
+    else if (ae === sourceView) scheduleCaretSync(false);
+  });
+
   /* ============================ 源码栏语法高亮（highlight.js 叠加层） ============================ */
   let hlTimer = null;
   function syncHlScroll() {
@@ -3291,6 +3761,7 @@
 
   sourceView.addEventListener("input", function () {
     if (suppressSourceInput) { suppressSourceInput = false; return; }
+    invalidateSplitMap(); // 源码变化后块级映射失效
     invalidateFind(); // 内容已变，旧匹配位置失效（源码/渲染两侧均重置）
     if (splitMode) scheduleSyncSourceToEditor();
     scheduleHighlight();
@@ -3388,12 +3859,13 @@
       sourceView.wrap = softWrap ? "soft" : "off";
       sourceView.classList.toggle("wrap-off", !softWrap);
     }
-    // 依据配置动态渲染工具栏（顺序 / 显隐由定制弹窗的 ↑/↓ 调整）
-    renderToolbar();
     // 启动即空白新文档，默认进入 Markdown 撰写模式（kind=markdown，path=null 待保存）。
     // 不再以 currentFile=null 的"中性空白"启动，以便开箱即用 Markdown 的
     // WYSIWYG 往返 / 大纲 / 围栏块(math,mermaid) 等能力；标题仍显示"未打开文件"。
+    // 注意：须先定 currentFile 再渲染工具栏——md 下要隐藏 htmlOnly 按钮（下划线/颜色/视频）。
     currentFile = { path: null, kind: "markdown" };
+    // 依据配置动态渲染工具栏（顺序 / 显隐由定制弹窗的 ↑/↓ 调整）
+    renderToolbar();
     applyMarkedConfig(); // 屏蔽 GFM 删除线对医学文本 ~ 范围的误判（必须在首次 marked.parse 前生效）
     updatePlaceholder();
     history = [takeSnapshot()];
@@ -3421,7 +3893,7 @@
     // 记住窗口最后尺寸（最小尺寸由 tauri.conf.json 的 minWidth/minHeight 兜底保护）
     setupWindowSizePersistence();
     restoreWindowSize();
-    // 应用上次主题
+    setupCloseGuard();   // 关闭保护：有未保存修改时弹确认（须在窗口 API 可用后注册）
     applyTheme(appConfig.theme);
     // 应用上次页面缩放
     try {
@@ -3430,12 +3902,18 @@
     } catch (e) {}
     // 恢复上次源码分栏
     if (appConfig.sourceSplit) enterSplitMode();
-    // 处理启动文件来源（优先级：多实例注入 > 命令行参数）：
-    // ① 多实例：Rust open_new_instance 经 initialization_script 注入 window.__OPEN_PATH__，
-    //    必须最先检查——argv 是进程级的，新窗口会误读主进程的启动参数；
-    // ② 文件关联：Windows 双击 .md/.html 时路径作为命令行参数传入，
+    // 处理启动文件来源（优先级：多实例「新建」注入 > 多实例打开注入 > 命令行参数）：
+    // ① 多实例「新建」：Rust open_new_instance(path, newKind) 注入 window.__NEW_KIND__，
+    //    本窗口按空白文档启动；必须最先检查，否则会误读进程级 argv；
+    // ② 多实例打开：Rust open_new_instance 经 initialization_script 注入 window.__OPEN_PATH__；
+    // ③ 文件关联：Windows 双击 .md/.html 时路径作为命令行参数传入，
     //    Tauri 不会自动打开，这里主动读取并在启动后加载该文件。
-    if (window.__OPEN_PATH__) {
+    if (window.__NEW_KIND__) {
+      const nk = window.__NEW_KIND__ === "html" ? "html" : "markdown";
+      currentFile = { path: null, kind: nk };
+      renderToolbar();   // 新建可能是 html，重算 htmlOnly 按钮显隐
+      setStatus(nk === "html" ? "已新建 HTML 文档" : "已新建 Markdown 文档");
+    } else if (window.__OPEN_PATH__) {
       openFileWithPath(window.__OPEN_PATH__);
     } else {
       try {

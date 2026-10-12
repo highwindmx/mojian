@@ -674,18 +674,30 @@ fn infer_mime(path: &str) -> String {
 /// 新实例窗口序号（保证同一进程内窗口 label 唯一）
 static WIN_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// 打开一个新应用窗口并加载指定文件（拖放多文件 → 多实例）。
-/// 通过 initialization_script 在页面脚本执行前注入 window.__OPEN_PATH__，
-/// 新窗口前端 init 检测到该变量即自动打开文件。
+/// 打开一个新应用窗口（拖放多文件 → 多实例；前端「新建」→ 空白新实例）。
+/// 带 new_kind：注入 window.__NEW_KIND__，新窗口前端按空白文档启动（跳过 argv 文件关联）；
+/// 不带 new_kind：注入 window.__OPEN_PATH__，新窗口自动打开指定文件。
 /// 不走 argv：argv 是进程级的，新窗口与主窗口同进程，经 argv 传递会互相污染。
 #[tauri::command]
-pub fn open_new_instance(app: tauri::AppHandle, path: String) -> Result<(), String> {
+pub fn open_new_instance(
+    app: tauri::AppHandle,
+    path: String,
+    new_kind: Option<String>,
+) -> Result<(), String> {
     use std::sync::atomic::Ordering;
     let seq = WIN_SEQ.fetch_add(1, Ordering::Relaxed);
     let label = format!("mojian-win-{}", seq);
     // JSON 字符串转义：Windows 路径含反斜杠需双写，双引号同样转义
-    let escaped = path.replace('\\', "\\\\").replace('"', "\\\"");
-    let init = format!("window.__OPEN_PATH__ = \"{}\";", escaped);
+    let init = match new_kind {
+        Some(k) => format!(
+            "window.__NEW_KIND__ = \"{}\";",
+            k.replace('\\', "\\\\").replace('"', "\\\"")
+        ),
+        None => format!(
+            "window.__OPEN_PATH__ = \"{}\";",
+            path.replace('\\', "\\\\").replace('"', "\\\"")
+        ),
+    };
     // 在异步运行时中创建窗口：从 IPC / 拖放事件回调同步创建窗口会触发事件循环重入，
     // 导致新窗口初始化挂起（表现为新实例白屏 / 无响应）。交出 async 运行时后创建即规避。
     let app2 = app.clone();

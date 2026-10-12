@@ -139,6 +139,19 @@
     </div>
   </div>
 
+  <!-- ============================ 关闭确认弹窗 ============================ -->
+  <div class="modal hidden" id="close-dialog">
+    <div class="modal-card">
+      <h3>未保存的更改</h3>
+      <p class="modal-desc">文档有修改尚未保存，直接关闭将丢失这些更改。</p>
+      <div class="modal-actions">
+        <button id="close-cancel">取消</button>
+        <button id="close-discard">直接关闭</button>
+        <button class="primary" id="close-save">保存并关闭</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============================ 工具栏自定义弹窗 ============================ -->
   <div class="modal hidden" id="toolbar-settings">
     <div class="modal-card">
@@ -167,6 +180,7 @@
             </div>
           </div>
         </div>
+        <p class="modal-desc">「下划线、文字颜色、背景颜色、视频」仅在 HTML 文档中显示——Markdown 保存不了这些格式，编辑 .md 时自动隐藏。</p>
         <!-- PDF 模式专用列表（复用弹窗时由 pdf.js 渲染，编辑器模式下隐藏） -->
         <div class="toolbar-settings-list hidden" id="toolbar-settings-list"></div>
         <div class="tb-toolbar-reset-row">

@@ -541,12 +541,14 @@
     border-color: var(--color-primary);
   }
 
-  /* 空内容占位提示 */
+  /* 空内容占位提示（right 同步内边距：分栏窄卡下文案在内容区宽度内换行，
+     绝对定位不设右边界会顶到卡片边框） */
   .editor.is-empty::before {
     content: attr(data-placeholder);
     position: absolute;
     top: 32px;
     left: 40px;
+    right: 40px;
     color: var(--color-muted);
     pointer-events: none;
   }
