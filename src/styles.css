@@ -72,6 +72,14 @@
     gap: 8px 12px;
   }
 
+  /* 未保存修改徽标：文档有改动时显示在顶栏最左侧（与窗口标题 ● 前缀同步） */
+  .app-header .dirty-dot {
+    color: #e67e22;
+    font-size: 12px;
+    line-height: 1;
+    flex: 0 0 auto;
+  }
+
   .app-header .header-btn,
   .app-header .header-select {
     flex-shrink: 0;

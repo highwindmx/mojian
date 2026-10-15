@@ -613,6 +613,20 @@
    * 关窗前对比二者判断是否有未保存修改；closeBypass 供"直接关闭"跳过守卫 */
   let savedSignature = "";
   let closeBypass = false;
+  /* 文档标题（窗口标题栏 / 任务栏显示）：docTitleBase 为纯标题，
+     refreshDirtyMark 按未保存状态加「● 」前缀，并切换顶栏脏标记徽标 */
+  let docTitleBase = "墨笺";
+  function setDocTitle(name) {
+    docTitleBase = name || "墨笺";
+    refreshDirtyMark();
+  }
+  /** 未保存视觉提示：窗口标题前缀 ● + 顶栏徽标（复用关闭保护的 savedSignature 基线） */
+  function refreshDirtyMark() {
+    const dirty = hasUnsavedChanges();
+    try { document.title = (dirty ? "● " : "") + docTitleBase; } catch (e) {}
+    const dot = document.getElementById("dirty-dot");
+    if (dot) dot.classList.toggle("hidden", !dirty);
+  }
   let siblingFiles = [];   // 同目录受支持文件列表（按文件名自然排序，全路径）
   let siblingIndex = -1;   // 当前文件在 siblingFiles 中的下标（-1 表示不在列表中）
   /** 缓存源模板：已加载 html 文件的 <head> 内部 HTML（已剥离 script/on*） */
@@ -819,6 +833,7 @@
     lastWasCommand = true;
     updatePlaceholder();
     scheduleAutosave();
+    refreshDirtyMark();   // 撤销/重做可能越过已保存基线（撤回到保存点则标记消失）
     if (splitMode) scheduleSyncEditorToSource(); // 撤销/重做后同步源码栏
     setTimeout(function () { suppressInput = false; }, 0);
   }
@@ -1818,7 +1833,7 @@
     loadedHead = doc.head ? doc.head.innerHTML : "";
     loadedTitle = doc.title || "";
     injectFileStyle(doc.documentElement);   // 全文档(head+body)样式限定到 #editor，含 body 内嵌 <style>
-    if (loadedTitle) document.title = loadedTitle;
+    if (loadedTitle) setDocTitle(loadedTitle);
     editor.innerHTML = doc.body ? doc.body.innerHTML : "";
     history = [takeSnapshot()];
     historyIndex = 0;
@@ -1895,7 +1910,7 @@
     scheduleOutline();
     loadedHead = "";
     loadedTitle = "";
-    document.title = "墨笺";
+    setDocTitle("墨笺");
     if (resetHistory) {
       // 打开文件 / 跨格式重载 / 源码→可视化：重置撤销栈，当前内容作为首个快照
       history = [takeSnapshot()];
@@ -2230,6 +2245,7 @@
       loadHtmlDocument(res.content);
       savedSignature = editor.innerHTML;      // 浏览器规范化后的 innerHTML（与 contentSignature 同表示）
     }
+    refreshDirtyMark();   // 新文件载入完成 = 回到基线
   }
 
   /** 取路径所在的目录（兼容 / 与 \\） */
@@ -2582,6 +2598,7 @@
       await tauriInvoke("save_file", { path, kind, content, encoding: enc });
       setStatus("已保存：" + path);
       savedSignature = contentSignature();   // 关闭保护基线：以"刚落盘的内容"为准
+      refreshDirtyMark();                    // 保存成功 = 回到基线，清除未保存标记
       if (kind === "markdown") {
         const lossy = detectMdFormatLoss();
         if (lossy.length) {
@@ -2679,7 +2696,7 @@
       }
     }
     // 标题放重载之后：loadMarkdown 会把标题重置回「墨笺」
-    try { document.title = name + " · 墨笺"; } catch (e) {}
+    setDocTitle(name + " · 墨笺");
   }
 
   /** 跨格式另存后按新格式重载视图：等价于"重新打开刚存的文件"，但保留用户当前的
@@ -2733,7 +2750,6 @@
     container.id = "editor-print";
     container.innerHTML = "<style>" + styleCss + "</style><div class=\"ep-body\">" + content + "</div>";
     document.body.appendChild(container);
-    const oldTitle = document.title;
     const base = (pdfPath.split(/[\\/]/).pop() || "document").replace(/\.pdf$/i, "");
     document.title = base; // 让打印对话框默认文件名取用户所选
     setStatus("已调起打印：在对话框中选择「另存为 PDF / Microsoft Print to PDF」，文件名默认为「" + base + "」");
@@ -2741,7 +2757,7 @@
       window.print();
       setTimeout(function () {
         if (container.parentNode) container.parentNode.removeChild(container);
-        document.title = oldTitle;
+        refreshDirtyMark();   // 打印临时改过标题，恢复带 ● 前缀的正式标题
       }, 500);
     }, 120);
   }
@@ -2864,6 +2880,7 @@
     sourceFind = null;
     sourceView.focus();
     highlightSource();
+    refreshDirtyMark();   // 源码模式签名口径切换（以源码栏文本为准），刷新脏标记
   }
 
   function exitSourceMode() {
@@ -2877,6 +2894,7 @@
     setSourceBtnActive();
     sourceFind = null;
     editor.focus();
+    refreshDirtyMark();   // 回到可视化编辑：签名口径切回编辑器内容
   }
 
   /** 进入分栏：左渲染区 + 右源码并排显示，双向防抖同步 */
@@ -2965,7 +2983,8 @@
     renderToolbar();   // md↔html 新建切换，重算 htmlOnly 按钮显隐
     loadedHead = "";
     loadedTitle = "";
-    document.title = "墨笺";
+    setDocTitle("墨笺");
+    savedSignature = contentSignature();   // 草稿基线：从空白开始计算未保存修改
     history = [takeSnapshot()];
     historyIndex = 0;
     lastWasCommand = true;
@@ -3488,9 +3507,11 @@
       // execCommand 路径（工具栏格式命令 / 粘贴 / Ctrl+B 等）：历史已由调用方记录，
       // 但分栏源码栏仍需同步——否则格式变化要等下次敲键（回车）才在右栏出现
       if (splitMode) scheduleSyncEditorToSource();
+      refreshDirtyMark();   // 格式命令同样产生未保存修改
       return;
     }
     recordInput();
+    refreshDirtyMark();
     updatePlaceholder();
     scheduleAutosave();
     invalidateFind(); // 编辑后已构建的查找结果失效
@@ -3541,6 +3562,7 @@
       }
       setTimeout(function () { suppressInput = false; }, 0);
       scheduleAutosave();
+      refreshDirtyMark();   // 分栏右侧编辑 300ms 防抖后才真正改内容，此时刷新脏标记
     }, 300);
   }
 
@@ -3847,6 +3869,7 @@
     if (suppressSourceInput) { suppressSourceInput = false; return; }
     invalidateSplitMap(); // 源码变化后块级映射失效
     invalidateFind(); // 内容已变，旧匹配位置失效（源码/渲染两侧均重置）
+    refreshDirtyMark();   // 源码模式编辑立即刷新；分栏模式内容 300ms 后落地再由同步回调刷新
     if (splitMode) scheduleSyncSourceToEditor();
     else if (sourceMode) recordInput(); // 纯源码模式：编辑纳入撤销栈（由 takeSnapshot 记录源码文本）
     scheduleHighlight();
@@ -3979,6 +4002,7 @@
     setupWindowSizePersistence();
     restoreWindowSize();
     setupCloseGuard();   // 关闭保护：有未保存修改时弹确认（须在窗口 API 可用后注册）
+    refreshDirtyMark();  // 初始脏标记（恢复上次分栏等操作后再刷一次，保证口径一致）
     applyTheme(appConfig.theme);
     // 应用上次页面缩放
     try {
@@ -3996,6 +4020,7 @@
     if (window.__NEW_KIND__) {
       const nk = window.__NEW_KIND__ === "html" ? "html" : "markdown";
       currentFile = { path: null, kind: nk };
+      savedSignature = contentSignature();   // 草稿基线：空白起点
       renderToolbar();   // 新建可能是 html，重算 htmlOnly 按钮显隐
       setStatus(nk === "html" ? "已新建 HTML 文档" : "已新建 Markdown 文档");
     } else if (window.__OPEN_PATH__) {
@@ -4008,6 +4033,10 @@
         } else {
           // 仅在无文件关联传入时提示「新建」；有启动文件（如双击 PDF）时不提示，
           // 避免打开 PDF/HTML 前先弹出误导性的「已新建 Markdown 文档」
+          // 空白实例 = 未命名 Markdown 草稿（currentFile.path 为 null），
+          // 打字即产生未保存修改（脏标记 / 关窗保护对草稿同样生效）
+          currentFile = { path: null, kind: "markdown" };
+          savedSignature = contentSignature();
           setStatus("已新建 Markdown 文档");
         }
       } catch (e) {}
