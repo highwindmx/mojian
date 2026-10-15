@@ -72,12 +72,17 @@
     gap: 8px 12px;
   }
 
-  /* 未保存修改徽标：文档有改动时显示在顶栏最左侧（与窗口标题 ● 前缀同步） */
-  .app-header .dirty-dot {
-    color: #e67e22;
-    font-size: 12px;
-    line-height: 1;
-    flex: 0 0 auto;
+  /* 未保存修改角标：文档有改动时显示在「保存」按钮右上角（与窗口标题 ● 前缀同步兜底） */
+  .toolbar button .dirty-dot {
+    position: absolute;
+    top: -3px;
+    right: -3px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #e67e22;
+    box-shadow: 0 0 0 1.5px var(--color-surface);   /* 同色系描边，与按钮/工具栏背景分离 */
+    pointer-events: none;                            /* 不挡按钮 tooltip 与点击 */
   }
 
   .app-header .header-btn,
@@ -247,6 +252,7 @@
     white-space: nowrap;
     transition: background 0.12s ease, border-color 0.12s ease;
     user-select: none;
+    position: relative;   /* 作为「保存」按钮未保存角标的定位锚点 */
   }
 
   .toolbar button:hover {

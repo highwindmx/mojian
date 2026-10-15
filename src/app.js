@@ -196,9 +196,16 @@
       else if (item.label) btn.innerHTML = item.label;
       if (item.keep) btn.classList.add("keep");
       if (item.value === "softwrap") btn.classList.toggle("active", softWrap);
+      if (item.value === "save") {
+        const dot = document.createElement("span");
+        dot.className = "dirty-dot hidden";
+        dot.setAttribute("aria-hidden", "true");
+        btn.appendChild(dot);
+      }
       toolbar.appendChild(btn);
     });
     updateNavButtons();
+    refreshDirtyMark();   // 重渲后恢复「保存」按钮角标的显隐状态
   }
 
   /* 自定义弹窗：Word 式双列表（左=当前显示的选项，右=可用命令）。
@@ -624,7 +631,8 @@
   function refreshDirtyMark() {
     const dirty = hasUnsavedChanges();
     try { document.title = (dirty ? "● " : "") + docTitleBase; } catch (e) {}
-    const dot = document.getElementById("dirty-dot");
+    // 角标挂在「保存」按钮右上角；若用户在工具栏定制里藏了保存按钮则无角标（仅剩标题前缀兜底）
+    const dot = toolbar && toolbar.querySelector('[data-action="save"] .dirty-dot');
     if (dot) dot.classList.toggle("hidden", !dirty);
   }
   let siblingFiles = [];   // 同目录受支持文件列表（按文件名自然排序，全路径）
