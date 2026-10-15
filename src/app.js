@@ -751,6 +751,10 @@
    * 历史栈：快照、提交、合并、撤销/重做
    * ===================================================================== */
   function takeSnapshot() {
+    if (sourceMode) {
+      // 纯源码模式下，右侧 textarea 是唯一可编辑区，撤销栈以源码文本为准
+      return { html: sourceView.value, caret: sourceView.selectionStart || 0, source: true };
+    }
     return { html: editor.innerHTML, caret: getCaretOffset() };
   }
 
@@ -801,10 +805,17 @@
 
   function restoreSnapshot(snapshot) {
     suppressInput = true;
-    editor.innerHTML = snapshot.html;
-    refreshAfterRender();
-    scheduleOutline();
-    setCaretOffset(snapshot.caret);
+    if (snapshot.source) {
+      // 纯源码模式：恢复源码文本与光标，并刷新语法高亮
+      sourceView.value = snapshot.html;
+      try { sourceView.setSelectionRange(snapshot.caret, snapshot.caret); } catch (e) {}
+      scheduleHighlight();
+    } else {
+      editor.innerHTML = snapshot.html;
+      refreshAfterRender();
+      scheduleOutline();
+      setCaretOffset(snapshot.caret);
+    }
     lastWasCommand = true;
     updatePlaceholder();
     scheduleAutosave();
@@ -1867,7 +1878,8 @@
     markedConfigured = true;
   }
 
-  function loadMarkdown(mdText) {
+  function loadMarkdown(mdText, resetHistory) {
+    if (resetHistory === undefined) resetHistory = true;
     editor.contentEditable = "true";
     let html;
     try {
@@ -1884,8 +1896,13 @@
     loadedHead = "";
     loadedTitle = "";
     document.title = "墨笺";
-    history = [takeSnapshot()];
-    historyIndex = 0;
+    if (resetHistory) {
+      // 打开文件 / 跨格式重载 / 源码→可视化：重置撤销栈，当前内容作为首个快照
+      history = [takeSnapshot()];
+      historyIndex = 0;
+    }
+    // 注意：分栏“右源码→左渲染”同步时传 resetHistory=false，历史由调用方追加，
+    // 否则 loadMarkdown 会清空撤销栈，导致分栏下在右侧源码栏编辑后左侧撤销/重做失效。
     lastWasCommand = true;
     lastChangeTs = Date.now();
     updatePlaceholder();
@@ -2835,6 +2852,12 @@
     editor.style.display = "none";
     sourceView.style.display = "block";
     sourceMode = true;
+    // 进入源码模式：撤销栈以当前源码为起点，撤销/重做仅在该栏（textarea）历史内有效，
+    // 不会越界退回到进入前左侧渲染区的状态（视觉上会更直观）。
+    history = [takeSnapshot()];
+    historyIndex = 0;
+    lastWasCommand = true;
+    lastChangeTs = Date.now();
     if (editorWrap) editorWrap.classList.add("source");
     toolbar.classList.add("source-mode");
     setSourceBtnActive();
@@ -3374,8 +3397,12 @@
   toolbar.addEventListener("click", function (e) {
     const btn = e.target.closest("button");
     if (!btn) return;
-    // 纯源码视图下仅允许 keep 类控件（缩放/分栏/源码），禁用其它格式化/插入按钮
-    if (sourceMode && !btn.classList.contains("keep")) return;
+    // 纯源码视图下仅允许 keep 类控件（缩放/分栏/源码）；撤销/重做例外——作用于源码栏
+    if (sourceMode && !btn.classList.contains("keep")) {
+      const a = btn.dataset.action;
+      if (a === "undo" || a === "redo") { /* 放行，交由下方 undo()/redo() 处理 */ }
+      else return;
+    }
     if (btn.dataset.cmd) {
       formatCommand(btn.dataset.cmd);
     } else if (btn.dataset.block) {
@@ -3498,7 +3525,11 @@
       suppressInput = true;
       const src = sourceView.value;
       if (currentFile && currentFile.kind === "markdown") {
-        loadMarkdown(src);
+        // 同步前先保留“同步前”的撤销点：loadMarkdown 仅重建左侧、不重置栈，
+        // 随后 commitHistory 把“同步后”追加为新快照——撤销到同步前、重做到同步后，
+        // 两侧通过 restoreSnapshot 的 scheduleSyncEditorToSource 保持一致。
+        loadMarkdown(src, false);
+        commitHistory();
       } else {
         editor.innerHTML = sanitizeHtmlString(src);
         history = [takeSnapshot()];
@@ -3817,6 +3848,7 @@
     invalidateSplitMap(); // 源码变化后块级映射失效
     invalidateFind(); // 内容已变，旧匹配位置失效（源码/渲染两侧均重置）
     if (splitMode) scheduleSyncSourceToEditor();
+    else if (sourceMode) recordInput(); // 纯源码模式：编辑纳入撤销栈（由 takeSnapshot 记录源码文本）
     scheduleHighlight();
   });
   sourceView.addEventListener("scroll", syncHlScroll);
