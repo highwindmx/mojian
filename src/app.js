@@ -1475,12 +1475,27 @@
   let slidesReady = false;
   let lastSlideMarkdown = "";
 
+  /** Markdown → HTML（幻灯片渲染专用）。
+   *  坑：vendored marked v4.3.0 导出的是对象（typeof === "object"，仅 .parse 等属性），
+   *  直接 marked(str) 会抛 "marked is not a function" —— 曾让幻灯片 catch 后退化成
+   *  显示 Markdown 源码（loadMarkdown 用 .parse 所以编辑器本身正常，极具迷惑性）。
+   *  统一走此函数：优先 .parse → 退回直接调用 → 再退转义纯文本。 */
+  function mdToHtml(md) {
+    try {
+      if (window.marked && typeof window.marked.parse === "function") return window.marked.parse(md);
+      if (typeof window.marked === "function") return window.marked(md);
+    } catch (e) { /* 落入下方纯文本分支 */ }
+    return escapeHtml(md).replace(/\n/g, "<br>");
+  }
+
   function splitSlides(md) {
     const lines = md.split(/\r?\n/);
     const chunks = [];
     let cur = [];
     for (let i = 0; i < lines.length; i++) {
-      if (/^\s*---\s*$/.test(lines[i])) { chunks.push(cur.join("\n")); cur = []; }
+      // 分隔线兼容 --- / *** / ___ 及带空格变体：幻灯片内容经 turndown 往返，
+      // <hr> 会被序列化成 "* * *"，只认 "---" 会漏页（整篇挤成一页）
+      if (/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(lines[i])) { chunks.push(cur.join("\n")); cur = []; }
       else cur.push(lines[i]);
     }
     chunks.push(cur.join("\n"));
@@ -1494,8 +1509,7 @@
     slidesContainer.innerHTML = "";
     slides.forEach(function (chunk) {
       const section = document.createElement("section");
-      try { section.innerHTML = window.marked ? window.marked(chunk) : chunk; }
-      catch (e) { section.textContent = chunk; }
+      section.innerHTML = mdToHtml(chunk);
       slidesContainer.appendChild(section);
     });
     lastSlideMarkdown = md;
@@ -1519,6 +1533,10 @@
     buildSlideSections(md);
     if (slidesOverlay) slidesOverlay.classList.remove("hidden");
     if (!window.Reveal) { showToast("演示组件未能加载（reveal.js 缺失）", true); return; }
+    // reveal 初始化会给 <html> 加 reveal-full-page、给 body 加 reveal-viewport；
+    // closeSlides 会移除它们（避免退出后应用留白底/锁滚动），重开时需补回
+    document.documentElement.classList.add("reveal-full-page");
+    document.body.classList.add("reveal-viewport");
     if (!slidesReady) {
       slidesReady = true;
       requestAnimationFrame(function () {
@@ -1541,6 +1559,10 @@
 
   function closeSlides() {
     if (slidesOverlay) slidesOverlay.classList.add("hidden");
+    // 移除 reveal 打在 html/body 上的类：否则退出演示后应用留白底（body 的
+    // reveal-viewport 白底）且 html 被锁 overflow:hidden
+    document.documentElement.classList.remove("reveal-full-page");
+    document.body.classList.remove("reveal-viewport");
   }
 
   async function exportSlides() {
@@ -1552,10 +1574,7 @@
     const slides = splitSlides(md);
     let sectionsHtml = "";
     slides.forEach(function (chunk) {
-      let html;
-      try { html = window.marked ? window.marked(chunk) : chunk; }
-      catch (e) { html = "<pre>" + chunk.replace(/&/g, "&amp;") + "</pre>"; }
-      sectionsHtml += "<section>" + html + "</section>\n";
+      sectionsHtml += "<section>" + mdToHtml(chunk) + "</section>\n";
     });
     let revealCss = "", themeCss = "", revealJs = "";
     try {

@@ -1726,13 +1726,35 @@
     position: fixed;
     inset: 0;
     z-index: 1000;
-    background: #1a1a1a;
+    /* 浅色放映：overlay 背景跟随应用主题。原硬编码 #1a1a1a 会把 reveal 视口
+       （非 embedded 模式下视口即 body，白底由 body 的 reveal-viewport 类提供）
+       整个盖住，叠加 white.css 的深色文字 = 黑底灰字完全看不清 */
+    background: var(--color-bg);
     display: flex;
     flex-direction: column;
+    /* 将 reveal 主题变量重定向到应用主题色：white.css 内部一律走 --r-* 变量，
+       在本作用域覆盖即使文字/标题/链接/进度条/表格线全部跟随主题（含 dark） */
+    --r-background-color: var(--color-bg);
+    --r-main-color: var(--color-text);
+    --r-heading-color: var(--color-text);
+    --r-link-color: var(--color-primary);
+    --r-link-color-dark: var(--color-primary);
+    --r-link-color-hover: var(--color-primary);
+    --r-selection-background-color: var(--color-primary-soft);
+    --r-selection-color: var(--color-surface);
   }
   .reveal-overlay .reveal {
     flex: 1 1 auto;
     min-height: 0;
+  }
+  /* 引用块与编辑器风格保持一致（white.css 默认半透明白底在浅色主题下几乎不可见） */
+  .reveal-overlay .reveal blockquote {
+    background: var(--color-bg);
+    color: var(--color-muted);
+    border-left: 4px solid var(--color-border-strong);
+    box-shadow: none;
+    width: 80%;
+    text-align: left;
   }
   .reveal-overlay .reveal .slides section {
     text-align: left;
@@ -1741,30 +1763,31 @@
   .reveal-overlay .reveal .slides section h2 {
     margin-top: 0;
   }
+  /* 底部控制栏跟随主题（原硬编码深色，在浅色主题下像贴了块黑条） */
   .slides-bar {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 8px 12px;
-    background: #2a2a2a;
-    color: #eee;
-    border-top: 1px solid #444;
+    background: var(--color-surface);
+    color: var(--color-text);
+    border-top: 1px solid var(--color-border);
     font-size: 13px;
   }
   .slides-bar button {
-    background: #3a3a3a;
-    color: #eee;
-    border: 1px solid #555;
+    background: var(--color-bg);
+    color: var(--color-text);
+    border: 1px solid var(--color-border-strong);
     border-radius: 4px;
     padding: 4px 10px;
     cursor: pointer;
     font-size: 13px;
   }
-  .slides-bar button:hover { background: #4a4a4a; }
-  .slides-bar button.primary { background: var(--color-primary); border-color: var(--color-primary); }
+  .slides-bar button:hover { background: var(--color-primary-soft); }
+  .slides-bar button.primary { background: var(--color-primary); border-color: var(--color-primary); color: #ffffff; }
   .slides-bar button.primary:hover { filter: brightness(1.08); }
-  .slides-bar .divider { width: 1px; height: 20px; background: #555; margin: 0 4px; }
+  .slides-bar .divider { width: 1px; height: 20px; background: var(--color-border); margin: 0 4px; }
   .slides-bar #slides-indicator {
     min-width: 60px;
     text-align: center;
