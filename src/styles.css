@@ -75,8 +75,8 @@
   /* 未保存修改角标：文档有改动时显示在「保存」按钮右上角（与窗口标题 ● 前缀同步兜底） */
   .toolbar button .dirty-dot {
     position: absolute;
-    top: -3px;
-    right: -3px;
+    top: -1px;
+    right: -1px;
     width: 9px;
     height: 9px;
     border-radius: 50%;
