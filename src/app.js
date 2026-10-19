@@ -52,9 +52,12 @@
 
   /* =====================================================================
    * 工具栏定义（数据驱动：支持自定义显隐与拖拽排序）
-   * 每个条目：{ name, kind:'action'|'cmd'|'block'|'zoomlabel', value, svg, label, title, keep }
+   * 每个条目：{ name, kind:'action'|'cmd'|'block'|'zoomlabel', value, svg, label, title, keep, reorder }
    *  - action/cmd/block 对应 data-action/data-cmd/data-block（与既有 click 委托一致）
-   *  - keep:true 表示核心控件（缩放/分栏/源码），始终显示、不参与显隐、不可隐藏
+   *  - keep:true 表示核心控件（缩放/分栏/源码），始终显示、不参与显隐、不可隐藏，
+   *           且源码模式下仍可用（styles.css 仅禁用非 keep 按钮）
+   *  - reorder:true 表示可进入「自定义」双列表重排顺序，但仍保留 keep 的不可隐藏与源码可用
+   *  - 绑定对 BOUND_PAIRS：归一后始终保持相邻、一起移动（见 normalizeBound）
    * DEFAULT_ORDER 中的 "__divider__" 为分组分隔符；"ZOOMLABEL" 为缩放百分比标签。
    * ===================================================================== */
   const TOOLBAR_ITEMS = {
@@ -92,13 +95,13 @@
     hr:         { name:"分割线", kind:"action", value:"hr", title:"插入分割线", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="12" x2="20" y2="12"/></svg>' },
     emoji:      { name:"表情", kind:"action", value:"emoji", title:"插入表情（Emoji）", label:'😀' },
     slides:     { name:"演示", kind:"action", value:"slides", title:"做成幻灯片播放（仅 Markdown）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><circle cx="12" cy="16" r="1.5" fill="currentColor" stroke="none"/></svg>' },
-    outline:    { name:"大纲", kind:"action", value:"outline", title:"显示/隐藏 Markdown 大纲", label:'大纲', keep:true },
+    outline:    { name:"大纲", kind:"action", value:"outline", title:"显示/隐藏 Markdown 大纲", label:'大纲', keep:true, reorder:true },
     find:       { name:"查找替换", kind:"action", value:"find", title:"查找 / 替换", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>' },
     zoomout:    { name:"缩小", kind:"action", value:"zoom-out", title:"缩小", label:'−', keep:true },
     zoomin:     { name:"放大", kind:"action", value:"zoom-in", title:"放大", label:'+', keep:true },
-    split:      { name:"分栏", kind:"action", value:"split", title:"左右分屏对照查看", label:'分栏', keep:true },
-    source:     { name:"原文", kind:"action", value:"source", title:"查看原始内容", label:'原文', keep:true },
-    softwrap:   { name:"自动换行", kind:"action", value:"softwrap", title:"长行自动折行", label:'换行', keep:true },
+    split:      { name:"分栏", kind:"action", value:"split", title:"左右分屏对照查看", label:'分栏', keep:true, reorder:true },
+    source:     { name:"原文", kind:"action", value:"source", title:"查看原始内容", label:'原文', keep:true, reorder:true },
+    softwrap:   { name:"自动换行", kind:"action", value:"softwrap", title:"长行自动折行", label:'换行', keep:true, reorder:true },
     ZOOMLABEL:  { kind:"zoomlabel", keep:true },
     mergePdf:   { name:"合并PDF", kind:"action", value:"mergePdf", title:"合并多个 PDF（无需先打开 PDF）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="9" height="12" rx="1.5"/><rect x="11" y="8" width="9" height="12" rx="1.5"/></svg>' },
   };
@@ -239,9 +242,24 @@
     isFlexible: isFlexibleItem,
   };
 
-  /** 可自由增删/排序的项（keep 核心控件与缩放标签固定，不进双列表） */
+  /** 可自由增删/排序的项（keep 核心控件与缩放标签固定，不进双列表；reorder 项可重排但保留 keep 特性） */
   function isFlexibleItem(item) {
-    return !!(item && !item.keep && item.kind !== "zoomlabel");
+    return !!(item && (item.reorder || (!item.keep && item.kind !== "zoomlabel")));
+  }
+
+  /** 绑定对：归一后始终保持相邻、一起移动（如 分栏/原文 在分屏场景下成对出现） */
+  const BOUND_PAIRS = [["split", "source"]];
+  function normalizeBound(order) {
+    BOUND_PAIRS.forEach(function (pair) {
+      const ia = order.indexOf(pair[0]);
+      const ib = order.indexOf(pair[1]);
+      if (ia < 0 || ib < 0) return;          // 任一方缺失（理论上 keep 不可删，保险）
+      if (Math.abs(ia - ib) <= 1) return;     // 已相邻
+      order.splice(ib, 1);                    // 把后一方挪到前一方紧邻之后，保持相对先后
+      const na = order.indexOf(pair[0]);
+      order.splice(na + 1, 0, pair[1]);
+    });
+    return order;
   }
 
   /** 左列表数据：完整 order 中"当前显示"的可排序项（含分隔符；隐藏项不显示） */
@@ -279,6 +297,7 @@
       if (it) newOrder.push(tok);     /* keep / 缩放标签 / 隐藏项原位保留；未知 token 顺手清理 */
     });
     while (i < flex.length) newOrder.push(flex[i++]);
+    normalizeBound(newOrder);   // 保持 分栏/原文 等绑定对始终相邻
     ctx.commit(newOrder, cfg.hidden);
     tbRenderPanel(ctx);
   }
@@ -368,8 +387,10 @@
     const remove = document.getElementById("tb-remove-btn");
     const up = document.getElementById("tb-up-btn");
     const down = document.getElementById("tb-down-btn");
+    const selTok = tbCurSelIdx >= 0 ? flex[tbCurSelIdx] : null;
+    const selIt = selTok ? tbCtx.items[selTok] : null;
     if (add) add.disabled = tbAvailSel === null;
-    if (remove) remove.disabled = tbCurSelIdx < 0;
+    if (remove) remove.disabled = tbCurSelIdx < 0 || (selIt && selIt.keep);  // keep 核心按钮不可隐藏
     if (up) up.disabled = tbCurSelIdx <= 0;
     if (down) down.disabled = tbCurSelIdx < 0 || tbCurSelIdx >= flex.length - 1;
   }
@@ -402,6 +423,8 @@
     const oi = tbOrderIndexAt(ctx, cfg, tbCurSelIdx);
     if (oi < 0) return;
     const tok = order[oi];
+    const it = ctx.items[tok];
+    if (it && it.keep) { showToast("核心按钮（缩放 / 分栏 / 原文 / 大纲 / 换行）不可隐藏"); return; }
     if (tok === "__divider__") order.splice(oi, 1);
     else cfg.hidden[tok] = true;
     tbCurSelIdx = Math.min(tbCurSelIdx, tbFlexTokens(ctx).length - 1);
@@ -415,11 +438,15 @@
     const flex = tbFlexTokens(ctx);
     const j = tbCurSelIdx + dir;
     if (j < 0 || j >= flex.length) return;
+    const movedTok = flex[tbCurSelIdx];
     const t = flex[tbCurSelIdx];
     flex[tbCurSelIdx] = flex[j];
     flex[j] = t;
     tbCurSelIdx = j;
     tbCommitFlex(ctx, flex);
+    // 绑定归一后下标可能偏移，依据 token 重新定位选中项
+    const nf = tbFlexTokens(ctx);
+    tbCurSelIdx = nf.indexOf(movedTok);
   }
 
   if (tbWordPanel) {
