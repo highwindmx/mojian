@@ -2,7 +2,7 @@
 
 # 墨笺 (Mojian)
 
-**当前版本：1.0.3**
+**当前版本：1.1.0**
 
 本地 **HTML / Markdown / PDF / SVG / EPUB 多格式编辑器** —— 基于 **Tauri 2（Rust + 系统 WebView）** 的轻量桌面应用。
 
