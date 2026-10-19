@@ -284,6 +284,41 @@
     user-select: none;
   }
   .toolbar button.keep { gap: 6px; }
+  /* 导出按钮的下拉箭头 */
+  .toolbar button.has-caret { gap: 1px; padding-right: 4px; }
+  .toolbar button .tb-caret { display: inline-flex; align-items: center; opacity: .65; margin-left: 1px; }
+  .toolbar button.has-caret:hover .tb-caret { opacity: 1; }
+  /* 导出下拉菜单 */
+  .tb-dropdown {
+    position: fixed;
+    z-index: 60;
+    min-width: 210px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+  }
+  .tb-dropdown-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 10px;
+    cursor: pointer;
+    color: var(--color-text);
+    font-size: 13px;
+  }
+  .tb-dropdown-item:hover { background: var(--color-bg); }
+  .tb-dropdown-item .tb-dd-label { font-size: 13px; font-weight: 600; }
+  .tb-dropdown-item .tb-dd-desc { font-size: 11px; color: var(--color-muted); }
   .toolbar button[data-action="source"].active,
   .toolbar button[data-action="split"].active {
     background: var(--color-primary-soft);
@@ -870,6 +905,31 @@
   }
   .modal-card p.modal-warn::before {
     content: "⚠ ";
+  }
+  /* 导出图片弹窗：限定大小的预览缩略图 */
+  .md-img-preview {
+    width: 100%;
+    height: 200px;
+    margin: 10px 0 4px;
+    border: 1px dashed var(--color-border-strong);
+    border-radius: 6px;
+    background: var(--color-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .md-img-preview img {
+    max-width: 100%;
+    max-height: 200px;
+    object-fit: contain;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .15);
+  }
+  .md-img-preview-hint {
+    font-size: 12px;
+    color: var(--color-muted);
+    padding: 0 12px;
+    text-align: center;
   }
 
   .modal-card input[type="text"] {

@@ -64,8 +64,7 @@
     nextfile:   { name:"下一个", kind:"action", value:"nextfile", title:"打开同目录下下一个受支持的文件", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>' },
     save:       { name:"保存", kind:"action", value:"save", title:"保存（存回原文件）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>' },
     saveas:     { name:"另存为", kind:"action", value:"saveas", title:"另存副本", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 21V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/><polyline points="9 13 12 16 15 13"/><line x1="12" y1="16" x2="12" y2="9"/></svg>' },
-    export:     { name:"导出", kind:"action", value:"export", title:"导出为网页", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><polyline points="8 11 12 15 16 11"/><path d="M5 19h14"/></svg>' },
-    exportImage: { name:"导出图片", kind:"action", value:"exportImage", title:"导出为图片（PNG / JPEG）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>' },
+    export:     { name:"导出", kind:"action", value:"export", title:"导出：网页或图片", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><polyline points="8 11 12 15 16 11"/><path d="M5 19h14"/></svg>' },
     clear:      { name:"清空", kind:"action", value:"clear", title:"清空草稿", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>' },
     undo:       { name:"撤销", kind:"action", value:"undo", title:"撤销", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>' },
     redo:       { name:"重做", kind:"action", value:"redo", title:"重做", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg>' },
@@ -105,7 +104,7 @@
   };
 
   const DEFAULT_ORDER = [
-    "new","open","mergePdf","prevfile","nextfile","save","saveas","export","exportImage","clear",
+    "new","open","mergePdf","prevfile","nextfile","save","saveas","export","clear",
     "__divider__",
     "undo","redo",
     "__divider__",
@@ -202,6 +201,13 @@
         dot.className = "dirty-dot hidden";
         dot.setAttribute("aria-hidden", "true");
         btn.appendChild(dot);
+      }
+      if (item.value === "export") {
+        const caret = document.createElement("span");
+        caret.className = "tb-caret";
+        caret.setAttribute("aria-hidden", "true");
+        caret.innerHTML = '<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+        btn.appendChild(caret);
       }
       toolbar.appendChild(btn);
     });
@@ -1441,6 +1447,82 @@
   }
 
   /** 导出为自包含 HTML：在 Tauri 下走保存对话框+命令，确保真正落盘 */
+  /* =====================================================================
+   * 导出按钮下拉菜单：把「导出为网页」与「导出为图片」合并到一个入口
+   *  - 点击主按钮弹出菜单；再次点击 / 点外部 / Esc 关闭
+   * ===================================================================== */
+  let exportMenuEl = null;
+  let exportMenuBtnEl = null;
+  function closeExportMenu() {
+    if (exportMenuEl) { exportMenuEl.remove(); exportMenuEl = null; }
+    exportMenuBtnEl = null;
+    document.removeEventListener("click", onExportMenuOutside, true);
+    document.removeEventListener("keydown", onExportMenuKey, true);
+  }
+  function onExportMenuOutside(e) {
+    if (exportMenuEl && !exportMenuEl.contains(e.target) &&
+        exportMenuBtnEl && !exportMenuBtnEl.contains(e.target)) {
+      closeExportMenu();
+    }
+  }
+  function onExportMenuKey(e) { if (e.key === "Escape") closeExportMenu(); }
+  function toggleExportMenu(btn, e) {
+    if (exportMenuEl) { closeExportMenu(); return; }
+    if (e && e.stopPropagation) e.stopPropagation();
+    exportMenuBtnEl = btn;
+    const menu = document.createElement("div");
+    menu.className = "tb-dropdown";
+    menu.setAttribute("role", "menu");
+    const items = [
+      { label: "导出为网页", desc: "导出为 HTML 文件", fn: exportHTML },
+      { label: "导出为图片", desc: "导出为 PNG / JPEG 长图", fn: openExportImage },
+    ];
+    items.forEach(function (it) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "tb-dropdown-item";
+      row.setAttribute("role", "menuitem");
+      row.innerHTML = '<span class="tb-dd-label">' + it.label + '</span>' +
+                      '<span class="tb-dd-desc">' + it.desc + '</span>';
+      row.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        closeExportMenu();
+        it.fn();
+      });
+      menu.appendChild(row);
+    });
+    document.body.appendChild(menu);
+    const r = btn.getBoundingClientRect();
+    menu.style.left = Math.max(8, r.left) + "px";
+    menu.style.top = (r.bottom + 4) + "px";
+    exportMenuEl = menu;
+    // 延迟注册外部点击/Esc 关闭，避免本次点击立即触发
+    setTimeout(function () {
+      document.addEventListener("click", onExportMenuOutside, true);
+      document.addEventListener("keydown", onExportMenuKey, true);
+    }, 0);
+  }
+
+  /** 导出图片弹窗里的限定大小预览缩略图（打开 / 切换格式或清晰度时刷新） */
+  async function updateExportImagePreview() {
+    const box = document.getElementById("md-img-preview");
+    if (!box || !document.body.contains(box)) return; // 弹窗未开或已关，放弃
+    const fmtSel = document.getElementById("md-img-format");
+    const fmt = (fmtSel && fmtSel.value === "jpeg") ? "jpeg" : "png";
+    const sc = parseFloat((document.getElementById("md-img-scale") || {}).value) || 2;
+    const previewScale = Math.min(sc, 2); // 预览用上限清晰度，避免大文档卡顿
+    box.innerHTML = '<span class="md-img-preview-hint">正在生成预览…</span>';
+    try {
+      const url = await renderEditorToImage(fmt, previewScale);
+      if (!document.body.contains(box)) return;
+      box.innerHTML = '<img alt="导出预览" src="' + url + '">';
+    } catch (err) {
+      if (!document.body.contains(box)) return;
+      const msg = (err && err.message) ? err.message : String(err);
+      box.innerHTML = '<span class="md-img-preview-hint">⚠ 无法预览：' + msg + '</span>';
+    }
+  }
+
   async function exportHTML() {
     const full = buildExportDocument();
     if (TAURI) {
@@ -1550,7 +1632,7 @@
 
   function openExportImage() {
     const d = document.getElementById("md-export-img-dialog");
-    if (d) openModal(d);
+    if (d) { openModal(d); updateExportImagePreview(); }
   }
   async function onExportImageOk() {
     const dlg = document.getElementById("md-export-img-dialog");
@@ -1737,6 +1819,10 @@
   if (slidesExport) slidesExport.addEventListener("click", exportSlides);
   const mdExportImgOk = document.getElementById("md-export-img-ok");
   if (mdExportImgOk) mdExportImgOk.addEventListener("click", onExportImageOk);
+  const mdImgFmt = document.getElementById("md-img-format");
+  const mdImgScale = document.getElementById("md-img-scale");
+  if (mdImgFmt) mdImgFmt.addEventListener("change", updateExportImagePreview);
+  if (mdImgScale) { mdImgScale.addEventListener("input", updateExportImagePreview); mdImgScale.addEventListener("change", updateExportImagePreview); }
   // Esc 退出演示（捕获阶段拦截，避免 reveal 抢占）
   document.addEventListener("keydown", function (e) {
     if (slidesOverlay && !slidesOverlay.classList.contains("hidden") && e.key === "Escape") {
@@ -3594,8 +3680,7 @@
       else if (action === "nextfile") goSibling(1);
       else if (action === "save") saveFile();
       else if (action === "saveas") saveFileAs();
-      else if (action === "export") exportHTML();
-      else if (action === "exportImage") openExportImage();
+      else if (action === "export") toggleExportMenu(btn, e);
       else if (action === "slides") presentSlides();
       else if (action === "outline") toggleMdOutline();
       else if (action === "clear") clearDraft();
