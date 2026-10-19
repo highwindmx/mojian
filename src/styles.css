@@ -865,6 +865,12 @@
     font-size: 13px;
     color: var(--color-muted);
   }
+  .modal-card p.modal-warn {
+    color: #b45309;
+  }
+  .modal-card p.modal-warn::before {
+    content: "⚠ ";
+  }
 
   .modal-card input[type="text"] {
     width: 100%;

@@ -65,6 +65,7 @@
     save:       { name:"保存", kind:"action", value:"save", title:"保存（存回原文件）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>' },
     saveas:     { name:"另存为", kind:"action", value:"saveas", title:"另存副本", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 21V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/><polyline points="9 13 12 16 15 13"/><line x1="12" y1="16" x2="12" y2="9"/></svg>' },
     export:     { name:"导出", kind:"action", value:"export", title:"导出为网页", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><polyline points="8 11 12 15 16 11"/><path d="M5 19h14"/></svg>' },
+    exportImage: { name:"导出图片", kind:"action", value:"exportImage", title:"导出为图片（PNG / JPEG）", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>' },
     clear:      { name:"清空", kind:"action", value:"clear", title:"清空草稿", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>' },
     undo:       { name:"撤销", kind:"action", value:"undo", title:"撤销", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>' },
     redo:       { name:"重做", kind:"action", value:"redo", title:"重做", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg>' },
@@ -104,7 +105,7 @@
   };
 
   const DEFAULT_ORDER = [
-    "new","open","mergePdf","prevfile","nextfile","save","saveas","export","clear",
+    "new","open","mergePdf","prevfile","nextfile","save","saveas","export","exportImage","clear",
     "__divider__",
     "undo","redo",
     "__divider__",
@@ -1465,6 +1466,127 @@
   }
 
   /* =====================================================================
+   * 导出为图片（PNG / JPEG）：把编辑器当前渲染结果栅格化为单张长图
+   *  - 零依赖方案：用 SVG <foreignObject> 包裹「带内联样式的 HTML」，
+   *    再以 Image 绘到 canvas，最后 toDataURL 落盘（与 PDF 图片导出同链路）
+   *  - 适用于 Markdown / HTML 文档的当前渲染结果
+   *  - 限制：foreignObject 内只能渲染"自包含"资源（data: URI 图片 /
+   *    系统字体）。含外链图片会因跨域污染 canvas 而失败，已做提示
+   * ===================================================================== */
+  function dataURLToBytes(url) {
+    const b64 = (url.split(",")[1]) || "";
+    const bin = atob(b64);
+    const len = bin.length;
+    const arr = new Uint8Array(len);
+    for (let i = 0; i < len; i++) arr[i] = bin.charCodeAt(i);
+    return arr;
+  }
+  function bytesToB64(bytes) {
+    let bin = "";
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return btoa(bin);
+  }
+
+  /** 把编辑器当前渲染结果栅格化为图片 data URL */
+  function renderEditorToImage(format, scale) {
+    return new Promise(function (resolve, reject) {
+      // 复用导出网页的样式与正文，保证"图"与"网页"视觉一致
+      const docHtml = buildExportDocument();
+      const tpl = document.implementation.createHTMLDocument("export");
+      tpl.documentElement.innerHTML = docHtml;
+      const styleText = tpl.querySelector("style") ? tpl.querySelector("style").textContent : "";
+      const bodyHTML = tpl.body ? tpl.body.innerHTML : "";
+      const WIDTH = 820;
+      const holder = document.createElement("div");
+      holder.style.cssText =
+        "box-sizing:border-box;width:" + WIDTH + "px;padding:40px 44px;background:#ffffff;";
+      holder.innerHTML = "<style>" + styleText + "</style>" + bodyHTML;
+
+      // 离屏测量尺寸（定位放在 wrapper 上，避免污染序列化后的坐标）
+      const wrapper = document.createElement("div");
+      wrapper.style.cssText = "position:fixed;left:-100000px;top:0;width:" + WIDTH + "px;";
+      wrapper.appendChild(holder);
+      document.body.appendChild(wrapper);
+      const w = Math.max(1, Math.ceil(holder.scrollWidth));
+      const h = Math.max(1, Math.ceil(holder.scrollHeight));
+      let xml;
+      try { xml = new XMLSerializer().serializeToString(holder); }
+      finally { document.body.removeChild(wrapper); }
+
+      // 超大文档保护：限制画布像素总量，避免内存爆掉
+      const MAXPX = 120000000; // 1.2 亿像素
+      let sc = scale || 2;
+      if (w * h * sc * sc > MAXPX) sc = Math.max(1, Math.floor(Math.sqrt(MAXPX / (w * h))));
+
+      const svg =
+        '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '">' +
+        '<foreignObject x="0" y="0" width="' + w + '" height="' + h + '">' +
+        xml +
+        "</foreignObject></svg>";
+      const url = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.ceil(w * sc);
+      canvas.height = Math.ceil(h * sc);
+      const ctx = canvas.getContext("2d");
+      if (format === "jpeg") { ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+      ctx.scale(sc, sc);
+      const img = new Image();
+      img.onload = function () {
+        try {
+          ctx.drawImage(img, 0, 0, w, h);
+          const mime = format === "jpeg" ? "image/jpeg" : "image/png";
+          resolve(canvas.toDataURL(mime, 0.92));
+        } catch (e) { reject(e); }
+      };
+      img.onerror = function () {
+        reject(new Error("图片渲染失败：可能包含外链图片或不受支持的样式"));
+      };
+      img.src = url;
+    });
+  }
+
+  function openExportImage() {
+    const d = document.getElementById("md-export-img-dialog");
+    if (d) openModal(d);
+  }
+  async function onExportImageOk() {
+    const dlg = document.getElementById("md-export-img-dialog");
+    if (dlg) closeModal(dlg);
+    const fmtSel = document.getElementById("md-img-format");
+    const fmt = (fmtSel && fmtSel.value === "jpeg") ? "jpeg" : "png";
+    const sc = parseFloat((document.getElementById("md-img-scale") || {}).value) || 2;
+    // 默认文件名：跟随当前文档名（无文件时退回 document）
+    let stem = "document";
+    if (currentFile && currentFile.path) {
+      const n = currentFile.path.split(/[\\/]/).pop() || "";
+      const s = n.replace(/\.[^.]+$/, "");
+      if (s) stem = s;
+    }
+    const ext = fmt === "jpeg" ? "jpg" : "png";
+    let path;
+    try {
+      path = await tauriSave({
+        defaultPath: stem + "." + ext,
+        filters: fmt === "jpeg"
+          ? [{ name: "JPEG 图片", extensions: ["jpg", "jpeg"] }]
+          : [{ name: "PNG 图片", extensions: ["png"] }],
+      });
+    } catch (e) { setStatus("导出图片失败：" + e, true); return; }
+    if (!path) return;
+    try {
+      const dataUrl = await renderEditorToImage(fmt, sc);
+      await tauriInvoke("save_file_bytes", { path: path, data: bytesToB64(dataURLToBytes(dataUrl)) });
+      setStatus("已导出图片：" + path);
+    } catch (e) {
+      const msg = (e && e.message) ? e.message : String(e);
+      setStatus("导出图片失败：" + msg, true);
+    }
+  }
+
+  /* =====================================================================
    * Markdown 幻灯片演示（reveal.js，离线 vendored）
    *  - 仅对 Markdown 文档可用；按「独自成行的 ---」切分幻灯片
    *  - 每页用已 vendored 的 marked 预渲染（与编辑器预览一致），再交给 reveal 播放
@@ -1613,6 +1735,8 @@
   if (slidesNext) slidesNext.addEventListener("click", function () { if (window.Reveal) window.Reveal.next(); });
   if (slidesClose) slidesClose.addEventListener("click", closeSlides);
   if (slidesExport) slidesExport.addEventListener("click", exportSlides);
+  const mdExportImgOk = document.getElementById("md-export-img-ok");
+  if (mdExportImgOk) mdExportImgOk.addEventListener("click", onExportImageOk);
   // Esc 退出演示（捕获阶段拦截，避免 reveal 抢占）
   document.addEventListener("keydown", function (e) {
     if (slidesOverlay && !slidesOverlay.classList.contains("hidden") && e.key === "Escape") {
@@ -3471,6 +3595,7 @@
       else if (action === "save") saveFile();
       else if (action === "saveas") saveFileAs();
       else if (action === "export") exportHTML();
+      else if (action === "exportImage") openExportImage();
       else if (action === "slides") presentSlides();
       else if (action === "outline") toggleMdOutline();
       else if (action === "clear") clearDraft();
