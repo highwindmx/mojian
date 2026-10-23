@@ -1,6 +1,6 @@
 [package]
 name = "mojian"
-version = "1.2.0"
+version = "1.0.5"
 description = "Tauri 2 富文本 / Markdown 编辑器"
 authors = ["maokk"]
 edition = "2021"
