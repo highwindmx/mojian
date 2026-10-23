@@ -719,6 +719,8 @@
     if (/^(\/|\.\/|\.\.\/)/.test(raw)) return true;
     if (/^https?:/i.test(raw)) return true;
     if (/^data:image\/(png|jpe?g|gif|webp|bmp);/i.test(raw)) return true;
+    // 裸相对路径（如 assets/logo.png）：无 scheme 冒号、非协议相对 // —— 交由 resolveLocalImages 按文档目录解析
+    if (/^[^:\s]+$/.test(raw) && !/^\/\//.test(raw)) return true;
     return false;
   }
 
@@ -1096,6 +1098,7 @@
     } else {
       uiAlert("请选择本地图片或填写图片 URL。");
     }
+    resolveLocalImages(editor);
   });
 
   /* =====================================================================
@@ -1431,7 +1434,7 @@
    * 导出与自动保存
    * ===================================================================== */
   function buildExportDocument() {
-    const content = editor.innerHTML;
+    const content = serializedEditorHtml(true);
     // 网页标题跟随当前文件名（无文件时退回"导出文档"）
     let pageTitle = "导出文档";
     if (currentFile && currentFile.path) {
@@ -1551,6 +1554,7 @@
   }
 
   async function exportHTML() {
+    await awaitLocalImages();
     const full = buildExportDocument();
     if (TAURI) {
       let path;
@@ -1600,7 +1604,8 @@
   }
 
   /** 把编辑器当前渲染结果栅格化为图片 data URL */
-  function renderEditorToImage(format, scale) {
+  async function renderEditorToImage(format, scale) {
+    await awaitLocalImages();
     return new Promise(function (resolve, reject) {
       // 复用导出网页的样式与正文，保证"图"与"网页"视觉一致
       const docHtml = buildExportDocument();
@@ -2105,6 +2110,7 @@
     lastChangeTs = Date.now();
     updatePlaceholder();
     updateToolbarState();
+    resolveLocalImages(editor);
     scheduleAutosave();
   }
 
@@ -2171,6 +2177,7 @@
     }
     editor.innerHTML = html;
     refreshAfterRender();
+    resolveLocalImages(editor);
     scheduleOutline();
     loadedHead = "";
     loadedTitle = "";
@@ -2237,6 +2244,20 @@
     turndownService.addRule("gfmTable", {
       filter: "table",
       replacement: function (content, node) { return tableToMd(node); },
+    });
+    // 图片往返：显示时 src 已被改写为 data URL（见 resolveLocalImages），
+    // 但保存必须还原为文档里的原始相对/本地路径，故优先读 data-md-src。
+    // addRule 走 unshift（规则数组前端），自动覆盖 turndown 默认 image 规则。
+    turndownService.addRule("mdLocalImage", {
+      filter: function (node) { return node.nodeName === "IMG"; },
+      replacement: function (content, node) {
+        const clean = function (a) { return a ? String(a).replace(/(\n+\s*)+/g, "\n") : ""; };
+        const alt = clean(node.getAttribute("alt"));
+        const src = node.getAttribute("data-md-src") || node.getAttribute("src") || "";
+        const title = clean(node.getAttribute("title"));
+        const titlePart = title ? ' "' + title + '"' : "";
+        return src ? ("![" + alt + "](" + src + titlePart + ")") : "";
+      }
     });
   }
 
@@ -2419,7 +2440,7 @@
     return (
       '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n' +
       head + "\n</head>\n<body>\n" +
-      editor.innerHTML + "\n</body>\n</html>"
+      serializedEditorHtml(false) + "\n</body>\n</html>"
     );
   }
 
@@ -2507,7 +2528,7 @@
       savedSignature = res.content;           // SVG 源码即真相
     } else {
       loadHtmlDocument(res.content);
-      savedSignature = editor.innerHTML;      // 浏览器规范化后的 innerHTML（与 contentSignature 同表示）
+      savedSignature = serializedEditorHtml(false);   // 归一化 innerHTML（还原本地图片原始 src，与 contentSignature 同表示）
     }
     refreshDirtyMark();   // 新文件载入完成 = 回到基线
   }
@@ -2516,6 +2537,96 @@
   function dirOf(p) {
     const i = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
     return i < 0 ? "." : p.slice(0, i);
+  }
+
+  /* =====================================================================
+   * 本地图片解析：把文档里的相对/本地 <img src> 解析为可显示的 data URL
+   * ---------------------------------------------------------------------
+   * 背景：编辑器文档的基址是应用自身（tauri.localhost），不是 .md/.html 所在目录，
+   * 故相对路径图片会按应用地址请求而 404。这里按 currentFile 所在目录解析出绝对路径，
+   * 经 read_image_base64 取字节后改写 src 为 data URL 供显示。
+   * 往返保真：原始 src 存入 data-md-src；序列化/签名时统一还原，绝不把 base64 写回源文件。
+   * ===================================================================== */
+  let lastImageResolve = Promise.resolve();
+
+  /** 把 <img src> 解析为本地绝对路径；非本地（http/data/blob 等）或语义模糊时返回 null */
+  function resolveLocalImagePath(src, baseDir) {
+    if (!src) return null;
+    const s = String(src).trim();
+    if (/^(https?:|data:|blob:|mailto:|about:)/i.test(s)) return null; // 远端/内嵌可直接显示
+    if (/^file:\/\//i.test(s)) {                                        // file:// → 本地路径
+      let p = s.replace(/^file:\/\//i, "");
+      try { p = decodeURIComponent(p); } catch (e) {}
+      p = p.replace(/^\/([A-Za-z]:)/, "$1");                            // file:///C:/ → C:/
+      return p.replace(/\//g, "\\");
+    }
+    if (/^[A-Za-z]:[\\/]/.test(s) || /^\\\\/.test(s)) {                 // 已是绝对路径（盘符/UNC）
+      return s.replace(/\//g, "\\");
+    }
+    if (/^\/\//.test(s)) return null;                                   // 协议相对，不猜
+    if (s.charAt(0) === "/") return null;                               // 根相对语义模糊，不猜
+    if (!baseDir) return null;                                          // 空白草稿无目录可依
+    const parts = (baseDir + "/" + s).replace(/\\/g, "/").split("/");   // 相对（bare / ./ / ../）
+    const out = [];
+    for (let i = 0; i < parts.length; i++) {
+      const seg = parts[i];
+      if (seg === "" || seg === ".") continue;
+      if (seg === "..") { if (out.length > 1) out.pop(); continue; }    // 不弹出盘符
+      out.push(seg);
+    }
+    return out.length ? out.join("\\") : null;
+  }
+
+  /** 遍历 root 内 <img>，把可解析的本地图片异步取为 data URL 供显示；返回待完成 Promise 集合 */
+  function resolveLocalImages(root) {
+    if (!root || !TAURI) return [];
+    const baseDir = (currentFile && currentFile.path) ? dirOf(currentFile.path) : null;
+    const imgs = root.querySelectorAll("img");
+    const tasks = [];
+    for (let i = 0; i < imgs.length; i++) {
+      const img = imgs[i];
+      if (img.getAttribute("data-md-img")) continue;          // 已处理/处理中/已失败：一次即可
+      const src = img.getAttribute("src");
+      const absPath = resolveLocalImagePath(src, baseDir);
+      if (!absPath) continue;                                 // 非本地图片，保持原样
+      if (!img.hasAttribute("data-md-src")) img.setAttribute("data-md-src", src);
+      img.setAttribute("data-md-img", "pending");             // 占位防重复触发
+      tasks.push(
+        tauriInvoke("read_image_base64", { path: absPath }).then(function (r) {
+          if (r && r.mime && r.data) {
+            img.src = "data:" + r.mime + ";base64," + r.data;
+            img.setAttribute("data-md-img", "1");
+          } else {
+            img.setAttribute("data-md-img", "err");
+          }
+        }).catch(function () {
+          img.setAttribute("data-md-img", "err");             // 读取失败：保留原始 src（裂图），不影响保存
+        })
+      );
+    }
+    if (tasks.length) lastImageResolve = Promise.all(tasks);
+    return tasks;
+  }
+
+  /** 等待进行中的本地图片解析完成（导出/打印前调用，确保图片已嵌入）；带超时兜底 */
+  function awaitLocalImages() {
+    const timeout = new Promise(function (res) { setTimeout(res, 4000); });
+    return Promise.race([lastImageResolve, timeout]);
+  }
+
+  /** 序列化编辑区 HTML：克隆后归一化本地图片，避免把 data URL / data-md-* 写进产物或签名。
+   *  keepDataUrl=true → 保留 data URL、仅去 data-md-*（用于自包含导出）；
+   *  keepDataUrl=false → 还原原始 src、去 data-md-*（用于保存 / 脏签名，保证往返与稳定）。 */
+  function serializedEditorHtml(keepDataUrl) {
+    const clone = editor.cloneNode(true);
+    const imgs = clone.querySelectorAll("img[data-md-src]");
+    for (let i = 0; i < imgs.length; i++) {
+      const img = imgs[i];
+      if (!keepDataUrl) img.setAttribute("src", img.getAttribute("data-md-src") || "");
+      img.removeAttribute("data-md-src");
+      img.removeAttribute("data-md-img");
+    }
+    return clone.innerHTML;
   }
 
   /** 刷新同目录受支持文件列表（用于上一个 / 下一个导航）；异步，失败时给出提示 */
@@ -2933,6 +3044,7 @@
     if (kind === "html" && currentFile && currentFile.kind === "markdown" && currentFile.path) {
       try {
         const enc = (getConfig().defaultEncoding || "") || undefined;
+        await awaitLocalImages();
         await tauriInvoke("save_file", { path, kind: "html", content: buildExportDocument(), encoding: enc });
         showToast("已存为独立网页，当前仍编辑原 Markdown 文档");
       } catch (e) {
@@ -2977,7 +3089,7 @@
       savedSignature = content;
     } else {
       loadHtmlDocument(content);
-      savedSignature = editor.innerHTML;
+      savedSignature = serializedEditorHtml(false);
     }
     if (kind !== "svg") {
       if (wasSplit) enterSplitMode();
@@ -2991,7 +3103,8 @@
    *  说明：打印对话框由系统接管，最终文件位置/文件名在对话框中确认；
    *  这里只负责把编辑器内容排成可打印文档并以所选名字预填对话框。 */
   async function exportEditorPDF(pdfPath) {
-    const content = editor.innerHTML;
+    await awaitLocalImages();
+    const content = serializedEditorHtml(true);
     const styleCss =
       ".ep-body{font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto," +
       "\"Helvetica Neue\",Arial,\"PingFang SC\",\"Microsoft YaHei\",sans-serif;" +
@@ -3104,6 +3217,7 @@
       lastChangeTs = Date.now();
       updatePlaceholder();
       updateToolbarState();
+      resolveLocalImages(editor);
     }
   }
 
@@ -3126,7 +3240,7 @@
     } else if (currentFile && currentFile.kind === "svg") {
       src = sourceView.value; // SVG 下右侧源码才是真相，不要被渲染 DOM 覆盖
     } else {
-      src = editor.innerHTML;
+      src = serializedEditorHtml(false);
     }
     sourceView.value = src;
     editor.style.display = "none";
@@ -3313,7 +3427,7 @@
     if (currentFile.kind === "svg") return sourceView.value;   // SVG 源码即真相
     if (sourceMode) return sourceView.value;                    // 源码模式下右侧是唯一真相
     if (currentFile.kind === "markdown") return serializeMarkdown();
-    return editor.innerHTML;
+    return serializedEditorHtml(false);
   }
 
   function hasUnsavedChanges() {
