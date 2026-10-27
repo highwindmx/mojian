@@ -1895,3 +1895,67 @@
     transition: opacity .12s ease, transform .12s ease;
   }
   .mtip.show { opacity: 1; transform: none; }
+
+/* =====================================================================
+ * JSON 表格视图（kind:"json"）
+ * ===================================================================== */
+.json-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+  margin: 8px 0;
+  background: var(--color-surface); }
+.json-table th,
+.json-table td {
+  border: 1px solid var(--color-border);
+  padding: 4px 10px;
+  text-align: left;
+  vertical-align: top; }
+.json-table thead th {
+  background: var(--color-primary-soft);
+  font-weight: 600;
+  position: sticky;
+  top: 0; }
+.json-table .json-idx {
+  color: var(--color-muted);
+  text-align: right;
+  width: 3em;
+  background: var(--color-bg); }
+.json-table td.json-number {
+  text-align: right;
+  font-variant-numeric: tabular-nums; }
+.json-table td.json-boolean {
+  color: #0a7d32;
+  font-weight: 600; }
+.json-table td.json-null {
+  color: var(--color-muted);
+  font-style: italic; }
+.json-table td.json-nested {
+  color: var(--color-muted);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px; }
+.json-table td.json-cell[data-path] {
+  cursor: cell; }
+.json-table td.json-cell[data-path]:hover {
+  background: var(--color-primary-soft);
+  outline: 1px solid var(--color-primary);
+  outline-offset: -1px; }
+.json-table td.json-missing {
+  background: repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(127,127,127,0.08) 4px, rgba(127,127,127,0.08) 8px); }
+.json-table input,
+.json-table select {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  border: 1px solid var(--color-primary);
+  border-radius: 3px;
+  padding: 2px 4px;
+  background: var(--color-surface);
+  color: var(--color-text); }
+.json-error {
+  color: #b3261e;
+  padding: 16px;
+  line-height: 1.7; }
+.json-scalar {
+  padding: 16px;
+  font-family: Consolas, "Courier New", monospace; }

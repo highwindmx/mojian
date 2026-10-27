@@ -338,6 +338,7 @@ fn data_mime(path: &str) -> &'static str {
         "js" => "application/javascript",
         "woff" => "font/woff",
         "woff2" => "font/woff2",
+        "json" => "application/json",
         "ttf" => "font/ttf",
         "otf" => "font/otf",
         _ => "application/octet-stream",
@@ -839,6 +840,7 @@ pub fn register_file_associations(app: tauri::AppHandle, types: Vec<String>) -> 
         ("pdf",  "Mojian.PDF",      "墨笺 PDF 文档",      "icon-pdf.ico"),
         ("svg",  "Mojian.SVG",      "墨笺 SVG 文档",      "icon-svg.ico"),
         ("epub",  "Mojian.EPUB",     "墨笺 EPUB 电子书",   "icon-epub.ico"),
+        ("json", "Mojian.JSON",      "墨笺 JSON 文档",      "icon-json.ico"),
     ];
 
     let exe = std::env::current_exe().map_err(|e| format!("无法获取 exe 路径: {e}"))?;
@@ -934,6 +936,7 @@ pub fn get_file_association_state() -> Result<Vec<String>, String> {
         ("pdf",  "Mojian.PDF"),
         ("svg",  "Mojian.SVG"),
         ("epub",  "Mojian.EPUB"),
+        ("json",  "Mojian.JSON"),
     ];
     let base = "Software\\Classes";
     let mut registered: Vec<String> = Vec::new();
@@ -1011,6 +1014,7 @@ fn register_capabilities(registered_exts: &[&str]) -> Result<(), String> {
             "pdf" => "Mojian.PDF",
             "svg" => "Mojian.SVG",
             "epub" => "Mojian.EPUB",
+            "json" => "Mojian.JSON",
             _ => continue,
         };
         fa.set_value(format!(".{ext}").as_str(), &progid.to_string())

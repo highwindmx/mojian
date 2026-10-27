@@ -149,9 +149,13 @@
   }
 
   /** 当前可见工具栏项的统一数据源（顺序 + 显隐 + 分隔符），renderToolbar 共用 */
+  /** JSON 文档仅保留文件/视图类按钮（表格数据无富文本编辑语义） */
+  const JSON_ALLOWED = { new:1, open:1, prevfile:1, nextfile:1, save:1, saveas:1, find:1, zoomout:1, ZOOMLABEL:1, zoomin:1, split:1, source:1, softwrap:1 };
+
   function visibleTokens() {
     const cfg = getToolbarConfig();
     const md = isMarkdownDoc();
+    const isJson = !!(currentFile && currentFile.kind === "json");
     const out = [];
     cfg.order.forEach(function (token) {
       if (token === "__divider__") { out.push({ divider: true }); return; }
@@ -160,6 +164,8 @@
       if (cfg.hidden[token] && !item.keep && item.kind !== "zoomlabel") return;
       // Markdown 下隐藏"存不进 .md"的按钮（下划线/颜色/视频，htmlOnly:true），打开 HTML 时恢复显示
       if (md && item.htmlOnly) return;
+      // JSON 表格视图：仅保留文件/视图类按钮
+      if (isJson && !JSON_ALLOWED[token]) return;
       out.push({ token: token, item: item, keep: !!item.keep });
     });
     return out;
@@ -2139,6 +2145,201 @@
     updateToolbarState();
   }
 
+  /* =====================================================================
+   * JSON 表格视图（kind:"json"）
+   * ---------------------------------------------------------------------
+   * 设计（2026-10-27 与用户定稿）：
+   *  - 单一真相源 = 解析后的对象树 currentJson；表格只是它的视图，单元格
+   *    带 data-path（\x1f 分段，key 含 . 也不会误分段）定位树节点。
+   *  - 右侧源码栏 = 原始 JSON 文本（"源码即真相"，与 SVG 同款签名语义）：
+   *    打开时原样保留（不重排版，避免"打开即脏"）；保存写回该文本。
+   *  - 双击叶子单元格（string/number/boolean）编辑 → 严格保原类型改树 →
+   *    序列化回写源码栏；嵌套 object/array 与 null 只读（走原文改）。
+   *  - 无结构性编辑（不增删行/列/key），确保不丢信息。
+   * ===================================================================== */
+  let currentJson = null;
+  let jsonOk = false;
+  const JSON_PATH_SEP = "\x1f";
+
+  /** 按路径取值；path 段为 \x1f 分隔，数字段表示数组下标 */
+  function jsonGetByPath(obj, path) {
+    let cur = obj;
+    const segs = String(path).split(JSON_PATH_SEP);
+    for (let i = 0; i < segs.length; i++) {
+      if (cur === null || typeof cur !== "object") return undefined;
+      cur = Array.isArray(cur) ? cur[Number(segs[i])] : cur[segs[i]];
+    }
+    return cur;
+  }
+
+  /** 按路径写值（路径由渲染时生成，中间节点必然存在） */
+  function jsonSetByPath(obj, path, value) {
+    const segs = String(path).split(JSON_PATH_SEP);
+    let cur = obj;
+    for (let i = 0; i < segs.length - 1; i++) {
+      cur = Array.isArray(cur) ? cur[Number(segs[i])] : cur[segs[i]];
+      if (cur === null || typeof cur !== "object") return false;
+    }
+    const last = segs[segs.length - 1];
+    if (Array.isArray(cur)) cur[Number(last)] = value;
+    else cur[last] = value;
+    return true;
+  }
+
+  /** 嵌套值单元格预览（紧凑 JSON，超长截断） */
+  function jsonPreview(v) {
+    let s;
+    try { s = JSON.stringify(v); } catch (e) { s = String(v); }
+    if (s.length > 80) s = s.slice(0, 77) + "…";
+    return s;
+  }
+
+  /** 单元格 HTML：叶子带 data-path 可编辑；嵌套/null 只读 */
+  function jsonCellHtml(v, path, missing) {
+    if (missing) return '<td class="json-cell json-missing"></td>';
+    const t = v === null ? "null" : typeof v;
+    if (t === "object") {
+      return '<td class="json-cell json-nested" data-nested="1" title="嵌套值请在右侧原文中修改">' + escapeHtml(jsonPreview(v)) + "</td>";
+    }
+    const editable = (t === "string" || t === "number" || t === "boolean")
+      ? ' data-path="' + escapeHtml(path) + '"' : "";
+    const tip = t === "null" ? ' title="null 值请在右侧原文中修改"' : "";
+    return '<td class="json-cell json-' + t + '"' + editable + tip + ">" + escapeHtml(t === "string" ? v : String(v)) + "</td>";
+  }
+
+  /** 对象表格：行 = 数组元素（或单对象），列 = key 并集（按首次出现顺序） */
+  function jsonObjTable(rows, single) {
+    const cols = [];
+    const seen = {};
+    rows.forEach(function (r) {
+      Object.keys(r).forEach(function (k) { if (!seen[k]) { seen[k] = true; cols.push(k); } });
+    });
+    let h = '<table class="json-table"><thead><tr>';
+    if (!single) h += '<th class="json-idx">#</th>';
+    cols.forEach(function (k) { h += "<th>" + escapeHtml(k) + "</th>"; });
+    h += "</tr></thead><tbody>";
+    rows.forEach(function (r, i) {
+      h += "<tr>";
+      if (!single) h += '<td class="json-idx">' + (i + 1) + "</td>";
+      cols.forEach(function (k) {
+        const has = Object.prototype.hasOwnProperty.call(r, k);
+        const path = single ? k : (String(i) + JSON_PATH_SEP + k);
+        h += jsonCellHtml(r[k], path, !has);
+      });
+      h += "</tr>";
+    });
+    return h + "</tbody></table>";
+  }
+
+  /** 标量/混合数组 → 两列列表（# / 值），叶子值仍可编辑 */
+  function jsonScalarList(arr) {
+    let h = '<table class="json-table json-list"><thead><tr><th class="json-idx">#</th><th>值</th></tr></thead><tbody>';
+    arr.forEach(function (v, i) {
+      h += '<tr><td class="json-idx">' + (i + 1) + "</td>" + jsonCellHtml(v, String(i), false) + "</tr>";
+    });
+    return h + "</tbody></table>";
+  }
+
+  /** 智能识别根结构并渲染 */
+  function renderJsonView(data) {
+    if (Array.isArray(data)) {
+      if (!data.length) return '<div class="json-scalar json-empty">（空数组）</div>';
+      const allObj = data.every(function (x) { return x && typeof x === "object" && !Array.isArray(x); });
+      if (allObj) return jsonObjTable(data, false);
+      return jsonScalarList(data);
+    }
+    if (data && typeof data === "object") return jsonObjTable([data], true);
+    return '<div class="json-scalar">' + escapeHtml(JSON.stringify(data)) + "</div>";
+  }
+
+  /** 按当前树重渲染表格（单元格编辑 / 源码回填后调用） */
+  function renderJsonTable() {
+    if (!jsonOk) return;
+    editor.innerHTML = renderJsonView(currentJson);
+  }
+
+  /** JSON 文档加载：渲染表格 + 右侧原文分栏（解析失败时给出可修正的原文视图） */
+  function loadJson(raw) {
+    editor.contentEditable = "false";
+    closeMdOutline();
+    let data;
+    try { data = JSON.parse(raw); }
+    catch (e) {
+      jsonOk = false;
+      currentJson = null;
+      editor.innerHTML = '<div class="json-error">⚠️ JSON 解析失败（' + escapeHtml(String((e && e.message) || e)) + '）<br>请在右侧原文中修正后保存。</div>';
+      sourceView.value = raw;
+      enterSplitMode();
+      updatePlaceholder();
+      updateToolbarState();
+      setStatus("JSON 解析失败，请在右侧原文修正", true);
+      return;
+    }
+    jsonOk = true;
+    currentJson = data;
+    editor.innerHTML = renderJsonView(data);
+    sourceView.value = raw;   // 原样保留：与 contentSignature（源码即真相）一致，打开不误报脏
+    enterSplitMode();
+    updatePlaceholder();
+    updateToolbarState();
+  }
+
+  /** JSON 表格：双击叶子单元格进入编辑（严格保原类型） */
+  function onJsonCellDbl(e) {
+    if (!currentFile || currentFile.kind !== "json" || !jsonOk) return;
+    const td = e.target.closest("td.json-cell[data-path]");
+    if (!td || td.dataset.nested || td.querySelector("input,select")) return;
+    const path = td.dataset.path;
+    const val = jsonGetByPath(currentJson, path);
+    const type = val === null ? "null" : typeof val;
+    if (type !== "string" && type !== "number" && type !== "boolean") {
+      setStatus("嵌套 / null 值请在右侧原文中修改", true);
+      return;
+    }
+    let input;
+    if (type === "boolean") {
+      input = document.createElement("select");
+      input.innerHTML = '<option value="true">true</option><option value="false">false</option>';
+      input.value = String(val);
+    } else {
+      input = document.createElement("input");
+      if (type === "number") { input.type = "number"; input.step = "any"; }
+      input.value = val;
+    }
+    td.textContent = "";
+    td.appendChild(input);
+    input.focus();
+    if (input.select) input.select();
+    let done = false;
+    const commit = function () {
+      if (done) return;
+      done = true;
+      let nv;
+      if (type === "boolean") nv = input.value === "true";
+      else if (type === "number") {
+        nv = Number(input.value);
+        if (input.value.trim() === "" || !isFinite(nv)) { renderJsonTable(); setStatus("请输入有效数字", true); return; }
+      } else {
+        nv = input.value;
+        if (nv === val) { renderJsonTable(); return; }   // 字符串未改动：还原（避免 input 吃掉换行）
+      }
+      jsonSetByPath(currentJson, path, nv);
+      sourceView.value = JSON.stringify(currentJson, null, 2);   // 源码 = 真相，同步回写
+      renderJsonTable();
+      refreshDirtyMark();
+    };
+    const cancel = function () {
+      if (done) return;
+      done = true;
+      renderJsonTable();   // 还原显示
+    };
+    input.addEventListener("blur", commit);
+    input.addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter") { ev.preventDefault(); input.blur(); }
+      else if (ev.key === "Escape") { ev.preventDefault(); cancel(); }
+    });
+  }
+
   /** 配置 marked：屏蔽 GFM 删除线对 ~ 的误判。
       医学/科学文本常用 ~ 表示“约/范围”（如 1.2~1.5 cm），同一段落出现两处 ~ 时，
       marked 的 ~~ 删除线会把中间整段渲染成 <del>，导致正常内容被加删除线。
@@ -2523,6 +2724,9 @@
     if (res.kind === "markdown") {
       loadMarkdown(res.content);
       savedSignature = serializeMarkdown();   // 以 turndown 序列化结果为基线（与 contentSignature 同表示）
+    } else if (res.kind === "json") {
+      loadJson(res.content);
+      savedSignature = res.content;           // JSON 源码即真相（与 SVG 同款：原文做签名基线）
     } else if (res.kind === "svg") {
       loadSvg(res.content);
       savedSignature = res.content;           // SVG 源码即真相
@@ -2963,6 +3167,8 @@
         showToast("⚠️ 保存的 MD 可能丢失约 " + Math.round(loss * 100) + "% 文本，建议另存备份核对");
         setStatus("⚠️ MD 往返可能丢失内容，已照常保存：" + path, true);
       }
+    } else if (kind === "json") {
+      content = sourceView.value; // JSON 源码即真相
     } else if (kind === "svg") {
       content = sourceView.value; // SVG 源码即真相
     } else {
@@ -3207,6 +3413,11 @@
   function applySourceToEditor() {
     if (!sourceMode) return;
     const src = sourceView.value;
+    if (currentFile && currentFile.kind === "json") {
+      try { currentJson = JSON.parse(src); jsonOk = true; renderJsonTable(); }
+      catch (e) { setStatus("JSON 仍有语法错误：" + e, true); }
+      return;
+    }
     if (currentFile && currentFile.kind === "markdown") {
       loadMarkdown(src);
     } else {
@@ -3237,6 +3448,8 @@
     let src;
     if (currentFile && currentFile.kind === "markdown") {
       src = serializeMarkdown();
+    } else if (currentFile && currentFile.kind === "json") {
+      src = sourceView.value; // JSON 源码即真相
     } else if (currentFile && currentFile.kind === "svg") {
       src = sourceView.value; // SVG 下右侧源码才是真相，不要被渲染 DOM 覆盖
     } else {
@@ -3282,6 +3495,7 @@
     invalidateSplitMap(); // 重新进入分栏：块级映射按当前内容重建
     let src;
     if (currentFile && currentFile.kind === "markdown") src = serializeMarkdown();
+    else if (currentFile && currentFile.kind === "json") src = sourceView.value; // JSON 源码即真相
     else if (currentFile && currentFile.kind === "svg") src = sourceView.value;
     else src = editor.innerHTML;
     sourceView.value = src;
@@ -3425,6 +3639,7 @@
   function contentSignature() {
     if (!currentFile || window.__pdfActive || window.__epubActive) return null;
     if (currentFile.kind === "svg") return sourceView.value;   // SVG 源码即真相
+    if (currentFile.kind === "json") return sourceView.value;  // JSON 源码即真相
     if (sourceMode) return sourceView.value;                    // 源码模式下右侧是唯一真相
     if (currentFile.kind === "markdown") return serializeMarkdown();
     return serializedEditorHtml(false);
@@ -3929,6 +4144,10 @@
         // 两侧通过 restoreSnapshot 的 scheduleSyncEditorToSource 保持一致。
         loadMarkdown(src, false);
         commitHistory();
+      } else if (currentFile && currentFile.kind === "json") {
+        // 分栏右侧（JSON 原文）编辑 → 防抖回填：parse 成功则重渲染表格，失败保留上次有效内容
+        try { currentJson = JSON.parse(src); jsonOk = true; renderJsonTable(); }
+        catch (e) { setStatus("JSON 暂有语法错误，左侧保留上次有效内容", true); }
       } else {
         editor.innerHTML = sanitizeHtmlString(src);
         history = [takeSnapshot()];
@@ -4256,6 +4475,7 @@
 
   editor.addEventListener("focus", updatePlaceholder);
   editor.addEventListener("blur", updatePlaceholder);
+  editor.addEventListener("dblclick", onJsonCellDbl);   // JSON 表格：双击叶子单元格编辑
   if (mdOutlineClose) mdOutlineClose.addEventListener("click", closeMdOutline);
 
   document.addEventListener("selectionchange", function () {

@@ -18,6 +18,8 @@ pub fn detect_kind(path: &str) -> Result<String, String> {
         Ok("svg".to_string())
     } else if lower.ends_with(".epub") {
         Ok("epub".to_string())
+    } else if lower.ends_with(".json") {
+        Ok("json".to_string())
     } else {
         Err(format!(
             "不支持的文件类型：{}（仅支持 .html / .htm / .md / .markdown / .pdf / .svg / .epub）",
