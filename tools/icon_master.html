@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  /* Mojian icon master: FULL square (no radius) - rounded corners + alpha
+     are applied analytically in Python. bg via query param ?bg=RRGGBB.
+     Screenshot at --window-size=1024,1024. */
+  html, body { margin: 0; padding: 0; overflow: hidden; width: 1024px; height: 1024px; }
+  .bg { position: absolute; left: 0; top: 0; width: 1024px; height: 1024px; }
+  .glyph {
+    position: absolute; left: 0; top: 0; width: 1024px; height: 1024px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: "SimHei", "Microsoft YaHei", sans-serif;
+    color: #fff;
+    font-size: 800px;   /* ink bbox ~= 68.75% of canvas, matches original series */
+    line-height: 1;
+    user-select: none;
+  }
+  .glyph span { transform: translateY(1%); }
+</style>
+</head>
+<body>
+  <div class="bg" id="bg"></div>
+  <div class="glyph"><span>墨</span></div>
+  <script>
+    var m = location.search.match(/bg=([0-9a-fA-F]{6})/);
+    document.getElementById("bg").style.background = "#" + (m ? m[1] : "F0AF0A");
+  </script>
+</body>
+</html>
