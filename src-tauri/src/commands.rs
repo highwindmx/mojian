@@ -737,7 +737,8 @@ pub fn get_initial_file() -> Option<String> {
             || lower.ends_with(".htm")
             || lower.ends_with(".svg")
             || lower.ends_with(".pdf")
-            || lower.ends_with(".epub");
+            || lower.ends_with(".epub")
+            || lower.ends_with(".json");
         if is_supported && std::path::Path::new(&path).is_file() {
             return Some(path);
         }
