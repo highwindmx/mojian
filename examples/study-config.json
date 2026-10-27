@@ -7,5 +7,5 @@
     { "id": "BJ01", "name": "北京中心", "pi": "李教授" }
   ],
   "doses": [25, 50, 100, 200],
-  "contacts": { "sponsor": "Inxmed", "cra": "张同学", "phone": null }
+  "contacts": { "sponsor23": "Inxmed", "cra": "张同学", "phone": null }
 }
