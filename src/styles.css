@@ -1639,7 +1639,7 @@
     margin-top: 8px; display: inline-block;
     border: 1px dashed var(--color-border-strong); border-radius: 6px; background: #fff;
   }
-  #pdf-sign-pad { display: block; cursor: crosshair; }
+  #pdf-sign-pad { display: block; cursor: crosshair; width: 320px; height: 140px; }
   .sign-controls {
     display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
     margin-top: 10px; padding: 8px 10px; border-radius: 6px;

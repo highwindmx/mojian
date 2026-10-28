@@ -94,6 +94,15 @@ window.PDFApp = (function () {
   }
   function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
 
+  /* 该页"实际显示旋转" = 文件自带 /Rotate + 本会话旋转增量。
+   * ⚠️ pdf.js 的 page.getViewport({rotation}) 一旦显式传值就会**覆盖**页面自带
+   * /Rotate（默认值才是 this.rotate）。所以渲染必须传这个合成值，否则"旋转后保存"
+   * 的文件重新打开仍按 0° 显示 —— 看起来像"旋转没保存"。 */
+  function effRotation(num) {
+    const v = ((pageFileRot[num] || 0) + (pageRotations[num] || 0)) % 360;
+    return ((v % 360) + 360) % 360;
+  }
+
   /* ---------- 状态 ---------- */
   let pdfDoc = null;
   let pdfBytes = null;
@@ -107,7 +116,10 @@ window.PDFApp = (function () {
   let pendingNote = null;
   let notes = [];
   let highlights = [];     // [{ page, quads:[[8 numbers]...], type:'highlight'|'underline' }]
-  let signatures = [];     // [{ id, page, x, y, w, h, dataUrl, bytes }]  (x,y 为 PDF 坐标，左上)
+  // 签章：（cx,cy）为页面坐标系（未旋转 user space，y 向上）里的中心点；
+  //   w/h 为未旋转尺寸（PDF 点）；rot 为"页面坐标系内的逆时针角"，取放置时的显示旋转，
+  //   使签章在当前旋转下正立显示（PDF 页 /Rotate 顺时针，故 rot = 显示旋转即可抵消）。
+  let signatures = [];     // [{ id, page, cx, cy, w, h, rot, dataUrl, bytes }]
   let sigScale = 1;        // 签章放置时的整体缩放（弹窗「大小」滑块，1 = 原始画板尺寸）
   let sigWhiteBg = true;   // 导出时把签名合成到白底（去掉 alpha/SMask，避免 Adobe 报"页面错误"）
   let sigSeq = 0;          // 签章自增 id（前端交互/编辑定位用）
@@ -115,7 +127,8 @@ window.PDFApp = (function () {
   let sigReplaceId = null; // 替换模式：正在被替换的签章 id（非 null 时选图直接替换，不进放置态）
   let sigSuppressClick = false; // 签章交互后抑制 pagesEl 的 click（避免误触发备注/放置）
   let watermarkCfg = null; // { text, size, opacity, color, diagonal }
-  let pageRotations = {};
+  let pageRotations = {};  // 用户在本会话内的旋转"增量"（叠加在文件自带的 /Rotate 之上）
+  let pageFileRot = {};    // 每页文件自带的 /Rotate（0/90/180/270），渲染前从 pdf.js page.rotate 读
   let pageViewports = {};
   let thumbsBuilt = false;
   let searchQuery = "";
@@ -175,8 +188,8 @@ window.PDFApp = (function () {
     if ( saveBtn ) saveBtn.classList.toggle("dirty", !!dirty);
     try {
       let t = document.title
-        .replace(/\s*\*\s*$/, "")          // 去旧 *
-        .replace(/\s*·\s*墨笺\s*$/, "");   // 去旧的 "· 墨笺" 后缀，重新拼
+        .replace(/\s*·\s*墨笺\s*$/, "")    // 先去掉旧后缀，否则末尾的 * 清不干净
+        .replace(/(\s*\*\s*)+$/, "");      // 再清掉累积的 * 脏标记
       document.title = t + (dirty ? " * · 墨笺" : " · 墨笺");
     } catch (e) {}
   }
@@ -191,7 +204,8 @@ window.PDFApp = (function () {
       bytes: pdfBytes,
       notes: notes.slice(),
       highlights: highlights.slice(),
-      signatures: signatures.slice(),
+      // 深拷贝：签章对象在拖动/缩放时会被原地改写，浅拷贝会让快照跟着变，撤销失效
+      signatures: signatures.map(function (s) { return Object.assign({}, s); }),
       rotations: Object.assign({}, pageRotations),
       dirty: dirty,
     };
@@ -564,12 +578,16 @@ window.PDFApp = (function () {
         const vp = pageViewports[sigNum];
         if (!vp) return;
         const p = vp.convertToPdfPoint(e.clientX - r.left, e.clientY - r.top);
-        const sw = 120, sh = 120 * (pendingSig.h / pendingSig.w || 1);
+        // 尺寸：以「大小」滑块为准（默认 100% → 基准宽 140pt），高按签章自身比例，
+        // 保证放进 PDF 的图块与预览完全同一比例，绝不拉伸。
+        const baseW = 140 * (sigScale || 1);
+        const ratio = (pendingSig.h && pendingSig.w) ? (pendingSig.h / pendingSig.w) : 0.35;
+        const w = baseW, h = baseW * ratio;
         pushHistory();
-        // 约定：x,y 为签章"左上角"的 PDF 坐标（renderSignaturesForPage / save 均按此解释）
+        // 记录放置时的显示旋转，作为页面坐标系内的"正立补偿角"（保存时一并写入）
         signatures.push({
-          id: ++sigSeq, page: sigNum, x: p[0], y: p[1], w: sw, h: sh,
-          dataUrl: pendingSig.dataUrl, bytes: pendingSig.bytes
+          id: ++sigSeq, page: sigNum, cx: p[0], cy: p[1], w: w, h: h,
+          rot: effRotation(sigNum), dataUrl: pendingSig.dataUrl, bytes: pendingSig.bytes
         });
         pendingSig = null;
         pagesEl.classList.remove("sig-placing");
@@ -791,7 +809,7 @@ window.PDFApp = (function () {
   }
 
   async function loadPdf(bytes) {
-    pdfDoc = null; pdfLibDoc = null; notes = []; highlights = []; signatures = []; pageRotations = {};
+    pdfDoc = null; pdfLibDoc = null; notes = []; highlights = []; signatures = []; pageRotations = {}; pageFileRot = {};
     pageViewports = {}; pageTextCache = {}; dirty = false; currentPage = 1; scale = 1;
     watermarkCfg = null; pendingSig = null; clearHistory(); hideNotePopup();
     if (pagesEl) pagesEl.classList.remove("sig-placing");
@@ -808,7 +826,8 @@ window.PDFApp = (function () {
   async function computeFitScale() {
     if (!pdfDoc) return;
     const page = await pdfDoc.getPage(1);
-    const base = page.getViewport({ scale: 1 });
+    pageFileRot[1] = page.rotate || 0;
+    const base = page.getViewport({ scale: 1, rotation: effRotation(1) });
     const avail = (mainEl.clientWidth || 800) - 48;
     scale = clamp(avail / base.width, 0.25, 4);
     const zl = $("pdf-zoom-label");
@@ -922,7 +941,8 @@ window.PDFApp = (function () {
     if (!pdfDoc) return;
     if (!force && renderedPages.has(num)) return;  // 懒渲染：已渲染过则跳过
     const page = await pdfDoc.getPage(num);
-    const rotation = pageRotations[num] || 0;
+    pageFileRot[num] = page.rotate || 0;         // 文件自带 /Rotate（渲染前先记下）
+    const rotation = effRotation(num);           // 合成：文件自带 + 本次旋转增量
     const viewport = page.getViewport({ scale: scale, rotation });
     pageViewports[num] = viewport;
 
@@ -1062,17 +1082,24 @@ window.PDFApp = (function () {
     });
   }
 
+  /* 签章 overlay：以"页面坐标系中心点 + 尺寸 + 页面内旋转"定位。
+   * 屏幕位置 = 中心点投影；屏幕尺寸 = 页面尺寸 × 缩放；再叠加旋转差
+   * （当前显示旋转 − 放置时的显示旋转），使"放置时正立"的签章在任何旋转下都
+   * 与最终写入 PDF 的样子严格一致。 */
   function renderSignaturesForPage(num, pageEl, viewport) {
+    const sc = viewport.scale || 1;
     signatures.filter(function (s) { return s.page === num; }).forEach(function (s) {
-      const tl = viewport.convertToViewportPoint(s.x, s.y);
-      const br = viewport.convertToViewportPoint(s.x + s.w, s.y - s.h);
+      const c = viewport.convertToViewportPoint(s.cx, s.cy);
+      const sw = s.w * sc, sh = s.h * sc;
       const wrap = document.createElement("div");
       wrap.className = "pdf-sig-overlay";
       wrap.dataset.sigId = s.id;
-      wrap.style.left = Math.min(tl[0], br[0]) + "px";
-      wrap.style.top = Math.min(tl[1], br[1]) + "px";
-      wrap.style.width = Math.abs(br[0] - tl[0]) + "px";
-      wrap.style.height = Math.abs(br[1] - tl[1]) + "px";
+      wrap.style.left = (c[0] - sw / 2) + "px";
+      wrap.style.top = (c[1] - sh / 2) + "px";
+      wrap.style.width = sw + "px";
+      wrap.style.height = sh + "px";
+      const vis = (((effRotation(num) - (s.rot || 0)) % 360) + 360) % 360;  // 视觉顺时针角
+      if (vis) wrap.style.transform = "rotate(" + vis + "deg)";
       const img = document.createElement("img");
       img.src = s.dataUrl;
       img.className = "pdf-sig-img";
@@ -1103,24 +1130,34 @@ window.PDFApp = (function () {
     if (!vp) return;
     const handle = e.target.closest(".pdf-sig-resize");
     const mode = handle ? "resize" : "move";
+    const sc = vp.scale || 1;
     const startX = e.clientX, startY = e.clientY;
     const startLeft = parseFloat(overlay.style.left) || 0;
     const startTop = parseFloat(overlay.style.top) || 0;
     const startW = parseFloat(overlay.style.width) || 0;
     const startH = parseFloat(overlay.style.height) || 0;
+    const startCX = startLeft + startW / 2, startCY = startTop + startH / 2;
+    const aspect = startW / Math.max(1, startH);          // 拖动缩放时锁死比例，防拉伸变形
+    const visRad = (((effRotation(num) - (sig.rot || 0)) % 360 + 360) % 360) * Math.PI / 180;
     let moved = false;
     overlay.classList.add("selected");
     try { overlay.setPointerCapture(e.pointerId); } catch (err) {}
 
     function onMove(ev) {
       const dx = ev.clientX - startX, dy = ev.clientY - startY;
-      if (!moved && Math.hypot(dx, dy) > 3) moved = true;
+      if (!moved && Math.hypot(dx, dy) > 3) { moved = true; pushHistory(); }  // 首次真正移动前记快照
       if (mode === "move") {
         overlay.style.left = (startLeft + dx) + "px";
         overlay.style.top = (startTop + dy) + "px";
       } else {
-        overlay.style.width = Math.max(20, startW + dx) + "px";
-        overlay.style.height = Math.max(20, startH + dy) + "px";
+        // 屏幕位移转到签章自身坐标系，只取对角分量 → 等比缩放（中心固定）
+        const lx = dx * Math.cos(visRad) + dy * Math.sin(visRad);
+        const nw = Math.max(24, startW + lx);
+        const nh = Math.max(8, nw / aspect);
+        overlay.style.width = nw + "px";
+        overlay.style.height = nh + "px";
+        overlay.style.left = (startCX - nw / 2) + "px";
+        overlay.style.top = (startCY - nh / 2) + "px";
       }
     }
     function onUp() {
@@ -1130,16 +1167,15 @@ window.PDFApp = (function () {
       overlay.classList.remove("selected");
       sigSuppressClick = true;              // 阻止随后冒泡的 pagesEl click 误触发备注/放置
       if (!moved) { showSigMenu(sig, overlay); return; }
-      // 提交最终 PDF 坐标（按当前缩放/旋转换算，保证与画布一致、缩放后不错位）
+      // 提交最终 PDF 坐标：屏幕中心 → 页面坐标（与画布/旋转后的显示严格对应）
       const nl = parseFloat(overlay.style.left) || 0;
       const nt = parseFloat(overlay.style.top) || 0;
       const nw = parseFloat(overlay.style.width) || 0;
       const nh = parseFloat(overlay.style.height) || 0;
-      const tl = vp.convertToPdfPoint(nl, nt);
-      const br = vp.convertToPdfPoint(nl + nw, nt + nh);
-      sig.x = tl[0]; sig.y = tl[1];
-      sig.w = Math.abs(br[0] - tl[0]); sig.h = Math.abs(br[1] - tl[1]);
-      pushHistory(); dirty = true; updateSaveState();
+      const c = vp.convertToPdfPoint(nl + nw / 2, nt + nh / 2);
+      sig.cx = c[0]; sig.cy = c[1];
+      sig.w = nw / sc; sig.h = nh / sc;
+      dirty = true; updateSaveState();
       setStatus("已更新签章位置/大小，点「保存」存入文件");
     }
     window.addEventListener("pointermove", onMove);
@@ -1198,9 +1234,10 @@ window.PDFApp = (function () {
     const old = wrap.querySelector("canvas");
     if (old) old.remove();                          // 重渲染前清掉旧画布，避免叠加
     const page = await pdfDoc.getPage(num);
-    const base = page.getViewport({ scale: 1 });
+    pageFileRot[num] = page.rotate || 0;
+    const base = page.getViewport({ scale: 1, rotation: effRotation(num) });
     const tScale = 130 / base.width;
-    const vp = page.getViewport({ scale: tScale, rotation: pageRotations[num] || 0 });
+    const vp = page.getViewport({ scale: tScale, rotation: effRotation(num) });
     const canvas = document.createElement("canvas");
     canvas.width = Math.floor(vp.width);
     canvas.height = Math.floor(vp.height);
@@ -1482,33 +1519,27 @@ window.PDFApp = (function () {
         arr.push(dict);
         pg.node.set(PDFLib.PDFName.of("Annots"), pdfLibDoc.context.obj(arr));
       });
-      // 签章：作为 PDF Stamp 注释写入（位于注释层之上，不会被内容流 / 置顶 OCG 图层盖住）
+      // 签章：直接绘入页面内容流（不用 Stamp 注释）。
+      // 原因：注释外观流（/AP）需要阅读器把 BBox 映射到 Rect，各家实现不一致 ——
+      // pdf.js 不渲染注释层、Acrobat 会做额外缩放，导致"保存后尺寸被压缩、位置被移动"。
+      // 画进内容流后，坐标即所见：x/y/w/h 就是页面坐标系里的真实值，任何阅读器一致。
       for (const s of signatures) {
         const idx = s.page - 1;
         const pg = pdfLibDoc.getPages()[idx];
         if (!pg) continue;
         const bytesToEmbed = sigWhiteBg ? await flattenSigToWhite(s.bytes) : s.bytes;
         const img = await pdfLibDoc.embedPng(bytesToEmbed);
-        // 外观流必须是 Form XObject（直接引用 Image XObject 为 /AP/N 不符合规范，多数阅读器不渲染 → 看似"没保存"）
-        const w = s.w, h = s.h;
-        const formContent = "q " + w + " 0 0 " + h + " 0 0 cm /Im0 Do Q";
-        const formDict = pdfLibDoc.context.obj({
-          Type: "XObject", Subtype: "Form", FormType: 1,
-          BBox: [0, 0, w, h],
-          Resources: { XObject: { Im0: img.ref } },
+        const rot = ((s.rot || 0) % 360 + 360) % 360;
+        const rad = rot * Math.PI / 180;
+        const cos = Math.cos(rad), sin = Math.sin(rad);
+        // drawImage 以"左下角"为锚点、绕锚点旋转；中心点已知 → 反推左下角
+        const hx = s.w / 2, hy = s.h / 2;
+        const bx = s.cx - (hx * cos - hy * sin);
+        const by = s.cy - (hx * sin + hy * cos);
+        pg.drawImage(img, {
+          x: bx, y: by, width: s.w, height: s.h,
+          rotate: PDFLib.degrees(rot),
         });
-        const formStream = pdfLibDoc.context.stream(new TextEncoder().encode(formContent), formDict);
-        const formRef = pdfLibDoc.context.register(formStream);
-        const dict = pdfLibDoc.context.obj({
-          Type: "Annot", Subtype: "Stamp",
-          Rect: [s.x, s.y - s.h, s.x + s.w, s.y],
-          AP: { N: formRef },
-          F: 4, Border: [0, 0, 0],
-        });
-        const existing = pg.node.Annots();
-        const arr = existing ? existing.asArray().slice() : [];
-        arr.push(dict);
-        pg.node.set(PDFLib.PDFName.of("Annots"), pdfLibDoc.context.obj(arr));
       }
       // 水印（文字渲染为图片平铺，支持中文）
       if (watermarkCfg) {
@@ -1807,7 +1838,8 @@ window.PDFApp = (function () {
       const files = [];
       for (const n of pages) {
         const page = await pdfDoc.getPage(n);
-        const vp = page.getViewport({ scale: sc });
+        pageFileRot[n] = page.rotate || 0;
+        const vp = page.getViewport({ scale: sc, rotation: effRotation(n) });
         const c = document.createElement("canvas");
         c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
         await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
@@ -1997,6 +2029,8 @@ window.PDFApp = (function () {
     const scaleEl = $("pdf-sign-scale"), scaleValEl = $("pdf-sign-scale-val");
     const whiteEl = $("pdf-sign-white");
     let penWidth = penEl ? Number(penEl.value) || 2 : 2;
+    let padSource = null;    // 选图时保留原始分辨率图（画板只作预览，避免降采样导致"图被压缩"）
+    let padDirty = false;    // 画板上是否手绘过（手绘过就以画板为准）
     if (penEl) penEl.addEventListener("input", function () { penWidth = Number(penEl.value) || 2; if (penValEl) penValEl.textContent = penEl.value; });
     if (scaleEl) scaleEl.addEventListener("input", function () { sigScale = (Number(scaleEl.value) || 100) / 100; if (scaleValEl) scaleValEl.textContent = scaleEl.value + "%"; });
     if (whiteEl) whiteEl.addEventListener("change", function () { sigWhiteBg = !!whiteEl.checked; });
@@ -2006,32 +2040,39 @@ window.PDFApp = (function () {
       const r = new FileReader();
       r.onload = function () {
         if (sigReplaceId != null) {
-          const sig = signatures.find(function (s) { return s.id === sigReplaceId; });
-          if (sig) {
-            sig.dataUrl = r.result;
-            sig.bytes = dataURLToBytes(r.result);
-            pushHistory(); dirty = true; updateSaveState();
-            const pe = pagesEl.querySelector('.pdf-page[data-num="' + sig.page + '"]');
-            if (pe) renderPage(sig.page, true);
-          }
-          sigReplaceId = null;
+          const rid = sigReplaceId; sigReplaceId = null;
+          fileInput.value = "";
+          normalizeSigImage(r.result).then(function (norm) {
+            const sig = signatures.find(function (s) { return s.id === rid; });
+            if (!sig) return;
+            pushHistory();
+            sig.dataUrl = norm.dataUrl;
+            sig.bytes = norm.bytes;
+            sig.h = sig.w * (norm.h / norm.w);   // 宽度不变、高度按新图比例 → 不拉伸
+            dirty = true; updateSaveState();
+            renderPage(sig.page, true);
+            setStatus("已替换签章图片");
+          }).catch(function (err) { toast("图片读取失败：" + err.message); });
           return;
         }
+        padSource = r.result; padDirty = false;
         drawToPad(r.result);
       };
       r.readAsDataURL(f);
     });
-    if (clearBtn) clearBtn.addEventListener("click", function () { if (pad) { const c = pad.getContext("2d"); c.clearRect(0, 0, pad.width, pad.height); } });
+    if (clearBtn) clearBtn.addEventListener("click", function () {
+      padSource = null; padDirty = false;
+      if (pad) { const c = pad.getContext("2d"); c.clearRect(0, 0, pad.width, pad.height); }
+    });
     if (okBtn) okBtn.addEventListener("click", function () {
-      closeModal(dlg);
       if (!pad) return;
-      const dataUrl = pad.toDataURL("image/png");
-      const bytes = dataURLToBytes(dataUrl);
-      pendingSig = { dataUrl: dataUrl, bytes: bytes, w: Math.round(pad.width * sigScale), h: Math.round(pad.height * sigScale) };
-      // 关键：进入"放置态"，让文字层不再拦截点击（否则点在文字上收不到 click）
-      if (pagesEl) pagesEl.classList.add("sig-placing");
-      setStatus("请在 PDF 页面上点击要放置签章的位置（Esc 取消）");
-      toast("点击 PDF 页面放置签章");
+      // 纯选图 → 用原图（保分辨率）；手绘过 → 用画板位图
+      const srcUrl = (padSource && !padDirty) ? padSource : pad.toDataURL("image/png");
+      normalizeSigImage(srcUrl).then(function (norm) {
+        closeModal(dlg);
+        // 进入"放置态"：让文字层不再拦截点击（否则点在文字上收不到 click）
+        beginSigPlacement(norm);
+      }).catch(function (err) { toast("签章生成失败：" + err.message); });
     });
     // —— 我的签章：localStorage 持久化，便于下次直接使用 ——
     const savedListEl = $("pdf-sign-saved");
@@ -2084,12 +2125,10 @@ window.PDFApp = (function () {
         im.src = item.dataUrl;
         cell.appendChild(im);
         cell.addEventListener("click", function () {
-          const bytes = dataURLToBytes(item.dataUrl);
-          pendingSig = { dataUrl: item.dataUrl, bytes: bytes, w: Math.round((item.w || 320) * sigScale), h: Math.round((item.h || 140) * sigScale) };
-          closeModal(dlg);
-          if (pagesEl) pagesEl.classList.add("sig-placing");
-          setStatus("请在 PDF 页面上点击要放置签章的位置（Esc 取消）");
-          toast("点击 PDF 页面放置签章");
+          normalizeSigImage(item.dataUrl).then(function (norm) {
+            closeModal(dlg);
+            beginSigPlacement(norm);
+          }).catch(function (err) { toast("签章读取失败：" + err.message); });
         });
         cell.addEventListener("contextmenu", function (e) {
           e.preventDefault();
@@ -2106,25 +2145,103 @@ window.PDFApp = (function () {
     if (saveSigBtn) saveSigBtn.addEventListener("click", async function () {
       if (!pad) return;
       if (!padHasInk(pad)) { toast("画板上还是空的，先手绘或选张图"); return; }
-      const dataUrl = pad.toDataURL("image/png");
-      const list = await loadSavedSignatures();
-      list.push({ id: "sig_" + Date.now(), dataUrl: dataUrl, w: pad.width, h: pad.height });
-      await persistSaved(list);
-      renderSavedSignatures();
-      toast("已存入我的签章，下次可直接点击使用");
+      try {
+        // 与「用于放置」同一取源规则：纯选图用原图，手绘用画板
+        const srcUrl = (padSource && !padDirty) ? padSource : pad.toDataURL("image/png");
+        const norm = await normalizeSigImage(srcUrl);
+        const list = await loadSavedSignatures();
+        list.push({ id: "sig_" + Date.now(), dataUrl: norm.dataUrl, w: norm.w, h: norm.h });
+        await persistSaved(list);
+        renderSavedSignatures();
+        toast("已存入我的签章，下次可直接点击使用");
+      } catch (e) { toast("存为常用失败：" + e.message); }
     });
       if (pad) {
         const c = pad.getContext("2d");
-        c.lineWidth = penWidth; c.lineCap = "round"; c.strokeStyle = "#111";
+        c.lineCap = "round"; c.strokeStyle = "#111";
         let drawing = false, lx = 0, ly = 0;
-        pad.addEventListener("mousedown", function (e) { drawing = true; c.lineWidth = penWidth; const r = pad.getBoundingClientRect(); lx = e.clientX - r.left; ly = e.clientY - r.top; });
-      pad.addEventListener("mousemove", function (e) {
-        if (!drawing) return; const r = pad.getBoundingClientRect(); const x = e.clientX - r.left, y = e.clientY - r.top;
-        c.beginPath(); c.moveTo(lx, ly); c.lineTo(x, y); c.stroke(); lx = x; ly = y;
-      });
-      window.addEventListener("mouseup", function () { drawing = false; });
-    }
+        // 画板位图分辨率是显示尺寸的 2 倍（640×280 / CSS 320×140），
+        // 指针坐标必须按比例换算，否则笔画和落点会错开、导出也糊。
+        function toPad(ev) {
+          const r = pad.getBoundingClientRect();
+          const kx = pad.width / (r.width || pad.width);
+          const ky = pad.height / (r.height || pad.height);
+          return [(ev.clientX - r.left) * kx, (ev.clientY - r.top) * ky];
+        }
+        pad.addEventListener("mousedown", function (e) {
+          drawing = true; padDirty = true;
+          c.lineWidth = penWidth * (pad.width / (pad.getBoundingClientRect().width || pad.width));
+          const p = toPad(e); lx = p[0]; ly = p[1];
+        });
+        pad.addEventListener("mousemove", function (e) {
+          if (!drawing) return;
+          const p = toPad(e);
+          c.beginPath(); c.moveTo(lx, ly); c.lineTo(p[0], p[1]); c.stroke();
+          lx = p[0]; ly = p[1];
+        });
+        window.addEventListener("mouseup", function () { drawing = false; });
+      }
   }
+
+  /* 签章图片规范化：裁掉四周空白 + 统一转 PNG。
+   * 1) 画板上写/贴的图往往四周大片空白，直接整块放进 PDF 会被缩得很小、
+   *    看起来像"被压缩变形"；裁到墨迹外框后，图块大小 = 签名实际大小。
+   * 2) 选 JPEG 时原流程直接 embedPng 会抛错；统一过一遍 canvas 就彻底避免。
+   * 3) 顺带限制最长边，避免大照片把 PDF 撑大。 */
+  const SIG_MAX_PX = 1600;
+  function loadImageFromUrl(url) {
+    return new Promise(function (resolve, reject) {
+      const im = new Image();
+      im.onload = function () { resolve(im); };
+      im.onerror = function () { reject(new Error("图片无法解码")); };
+      im.src = url;
+    });
+  }
+  async function normalizeSigImage(dataUrl) {
+    const img = await loadImageFromUrl(dataUrl);
+    const nw = img.naturalWidth || img.width, nh = img.naturalHeight || img.height;
+    if (!nw || !nh) throw new Error("图片尺寸无效");
+    const k = Math.min(1, SIG_MAX_PX / Math.max(nw, nh));
+    const c0 = document.createElement("canvas");
+    c0.width = Math.max(1, Math.round(nw * k));
+    c0.height = Math.max(1, Math.round(nh * k));
+    const g0 = c0.getContext("2d");
+    g0.drawImage(img, 0, 0, c0.width, c0.height);
+    // 墨迹外框：alpha > 8 且非近白（扫描件/照片的白纸底色）
+    let d;
+    try { d = g0.getImageData(0, 0, c0.width, c0.height).data; } catch (e) { d = null; }
+    let x0 = 0, y0 = 0, x1 = c0.width - 1, y1 = c0.height - 1;
+    if (d) {
+      let bx0 = c0.width, by0 = c0.height, bx1 = -1, by1 = -1;
+      for (let y = 0; y < c0.height; y++) {
+        for (let x = 0; x < c0.width; x++) {
+          const o = (y * c0.width + x) * 4;
+          if (d[o + 3] <= 8) continue;
+          if (d[o] > 238 && d[o + 1] > 238 && d[o + 2] > 238) continue;
+          if (x < bx0) bx0 = x; if (x > bx1) bx1 = x;
+          if (y < by0) by0 = y; if (y > by1) by1 = y;
+        }
+      }
+      if (bx1 >= 0) {
+        x0 = Math.max(0, bx0 - 1); y0 = Math.max(0, by0 - 1);
+        x1 = Math.min(c0.width - 1, bx1 + 1); y1 = Math.min(c0.height - 1, by1 + 1);
+      }
+    }
+    const cw = x1 - x0 + 1, ch = y1 - y0 + 1;
+    const c1 = document.createElement("canvas");
+    c1.width = cw; c1.height = ch;
+    c1.getContext("2d").drawImage(c0, x0, y0, cw, ch, 0, 0, cw, ch);
+    const outUrl = c1.toDataURL("image/png");
+    return { dataUrl: outUrl, bytes: dataURLToBytes(outUrl), w: cw, h: ch };
+  }
+  /* 进入"待放置"态 */
+  function beginSigPlacement(norm) {
+    pendingSig = { dataUrl: norm.dataUrl, bytes: norm.bytes, w: norm.w, h: norm.h };
+    if (pagesEl) pagesEl.classList.add("sig-placing");
+    setStatus("请在 PDF 页面上点击要放置签章的位置（Esc 取消）");
+    toast("点击 PDF 页面放置签章");
+  }
+
   function drawToPad(dataUrl) {
     const pad = $("pdf-sign-pad"); if (!pad) return;
     const img = new Image();
@@ -2393,7 +2510,8 @@ window.PDFApp = (function () {
     container.id = "pdf-print";
     for (let i = 1; i <= numPages; i++) {
       const page = await pdfDoc.getPage(i);
-      const vp = page.getViewport({ scale: 2 });
+      pageFileRot[i] = page.rotate || 0;
+      const vp = page.getViewport({ scale: 2, rotation: effRotation(i) });
       const canvas = document.createElement("canvas");
       canvas.width = vp.width; canvas.height = vp.height;
       canvas.style.width = "100%"; canvas.style.maxWidth = vp.width + "px";
