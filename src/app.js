@@ -1952,6 +1952,13 @@
     return null;
   }
 
+  /* 窗口长宽比：黄金分割（宽 : 高 ≈ 1.618 : 1）。
+     tauri.conf.json 的默认尺寸 1132×700 本身已是该比例（首次启动即黄金矩形）；
+     恢复上次尺寸时若比例偏差过大，就按记忆的高度重算宽度，保证每次启动都是黄金矩形，
+     同时保留用户上次的尺度（高度）。偏差在容差内则原样恢复，不打扰细微调整。 */
+  const GOLDEN_RATIO = 1.6180339887;
+  const GOLDEN_TOLERANCE = 0.05;   // 比例偏差 5% 以内视为已符合
+
   /** 启动时恢复上次窗口尺寸（来自同目录配置文件；最小尺寸由 tauri.conf.json 兜底） */
   async function restoreWindowSize() {
     const w = tauriWindowApi();
@@ -1961,10 +1968,13 @@
       if (!s || !s.w || !s.h) return;
       const win = w.getCurrentWindow();
       // 用 PhysicalSize 读写保持一致，避免高 DPI 下的单位换算误差
-      await win.setSize(new w.PhysicalSize(
-        Math.max(1, Math.round(s.w)),
-        Math.max(1, Math.round(s.h))
-      ));
+      let tw = Math.max(1, Math.round(s.w));
+      let th = Math.max(1, Math.round(s.h));
+      // 以记忆的高度为基准换算宽度，一次性 setSize（避免两次改动引起窗口闪跳）
+      if (Math.abs(tw / th - GOLDEN_RATIO) / GOLDEN_RATIO > GOLDEN_TOLERANCE) {
+        tw = Math.round(th * GOLDEN_RATIO);
+      }
+      await win.setSize(new w.PhysicalSize(tw, th));
     } catch (e) { /* 窗口尺寸恢复失败不致命 */ }
   }
 
