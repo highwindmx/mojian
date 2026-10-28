@@ -1944,66 +1944,6 @@
     toastTimer = setTimeout(function () { el.classList.remove("show"); }, 2600);
   }
 
-  /* Tauri 窗口模块（v2：__TAURI__.window），用于记住窗口尺寸 */
-  function tauriWindowApi() {
-    if (TAURI.window && typeof TAURI.window.getCurrentWindow === "function") {
-      return TAURI.window;
-    }
-    return null;
-  }
-
-  /* 窗口长宽比：黄金分割（宽 : 高 ≈ 1.618 : 1）。
-     tauri.conf.json 的默认尺寸 1132×700 本身已是该比例（首次启动即黄金矩形）；
-     恢复上次尺寸时若比例偏差过大，就按记忆的高度重算宽度，保证每次启动都是黄金矩形，
-     同时保留用户上次的尺度（高度）。偏差在容差内则原样恢复，不打扰细微调整。 */
-  const GOLDEN_RATIO = 1.6180339887;
-  const GOLDEN_TOLERANCE = 0.05;   // 比例偏差 5% 以内视为已符合
-
-  /** 启动时恢复上次窗口尺寸（来自同目录配置文件；最小尺寸由 tauri.conf.json 兜底） */
-  async function restoreWindowSize() {
-    const w = tauriWindowApi();
-    if (!w) return;
-    try {
-      const s = appConfig.windowSize;
-      if (!s || !s.w || !s.h) return;
-      const win = w.getCurrentWindow();
-      // 用 PhysicalSize 读写保持一致，避免高 DPI 下的单位换算误差
-      let tw = Math.max(1, Math.round(s.w));
-      let th = Math.max(1, Math.round(s.h));
-      // 以记忆的高度为基准换算宽度，一次性 setSize（避免两次改动引起窗口闪跳）
-      if (Math.abs(tw / th - GOLDEN_RATIO) / GOLDEN_RATIO > GOLDEN_TOLERANCE) {
-        tw = Math.round(th * GOLDEN_RATIO);
-      }
-      await win.setSize(new w.PhysicalSize(tw, th));
-    } catch (e) { /* 窗口尺寸恢复失败不致命 */ }
-  }
-
-  /** 保存当前窗口尺寸到配置文件（物理像素，与读取保持一致） */
-  async function saveWindowSize() {
-    const w = tauriWindowApi();
-    if (!w) return;
-    try {
-      const win = w.getCurrentWindow();
-      const size = await win.innerSize(); // 返回 PhysicalSize
-      appConfig.windowSize = { w: size.width, h: size.height };
-      await saveConfig();
-    } catch (e) { /* 忽略 */ }
-  }
-
-  /** 监听窗口尺寸变化并防抖保存 */
-  function setupWindowSizePersistence() {
-    const w = tauriWindowApi();
-    if (!w) return;
-    try {
-      const win = w.getCurrentWindow();
-      let t = null;
-      win.onResized(function () {
-        if (t) clearTimeout(t);
-        t = setTimeout(saveWindowSize, 400);
-      });
-    } catch (e) { /* 忽略 */ }
-  }
-
   /** 递归移除所有 on* 事件处理属性（防 XSS） */
   function stripOnAttributes(root) {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null);
@@ -4569,6 +4509,8 @@
     document.addEventListener("contextmenu", function (e) { e.preventDefault(); });
     // 先加载同目录配置文件（窗格大小/主题/工具栏布局等），再据其恢复
     await loadConfig();
+    // 窗口尺寸/居中/显示已改由 Rust setup() 在显示前一步完成（不再依赖前端 JS），
+    // 既保证双击 exe 必出窗口，又无「先默认尺寸后跳变」的闪动。
     // 源码栏自动换行（默认开启，可从配置恢复）
     softWrap = getConfig().softWrap !== false;
     if (sourceView) {
@@ -4606,9 +4548,6 @@
     if (toastEl) {
       toastEl.addEventListener("click", function () { this.classList.remove("show"); });
     }
-    // 记住窗口最后尺寸（最小尺寸由 tauri.conf.json 的 minWidth/minHeight 兜底保护）
-    setupWindowSizePersistence();
-    restoreWindowSize();
     setupCloseGuard();   // 关闭保护：有未保存修改时弹确认（须在窗口 API 可用后注册）
     refreshDirtyMark();  // 初始脏标记（恢复上次分栏等操作后再刷一次，保证口径一致）
     applyTheme(appConfig.theme);
