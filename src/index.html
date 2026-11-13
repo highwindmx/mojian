@@ -33,8 +33,10 @@
         <option value="">自动</option>
         <option value="utf-8">UTF-8</option>
         <option value="gbk">GBK</option>
+        <option value="utf-16le">UTF-16 小端</option>
+        <option value="utf-16be">UTF-16 大端</option>
       </select>
-      <span class="hint">拖文件进来即用 · 自动存草稿</span>
+      <span class="hint">拖文件进来即用 · 多标签</span>
     </div>
   </header>
 
@@ -47,6 +49,23 @@
   <!-- ============================ PDF 工具栏（由 pdf.js 依据配置动态渲染，支持顶部「定制」） ============================ -->
   <div class="toolbar pdf-toolbar hidden" id="pdf-toolbar"><!-- 按钮 / 分组由 pdf.js 动态生成 --></div>
 
+  <!-- ============================ 标签栏（工具栏与编辑区之间；必须是兄弟节点，
+       不能放进 #toolbar —— renderToolbar() 每次会 innerHTML="" 清空它） ============================ -->
+  <div class="tab-bar" id="tab-bar" role="tablist" aria-label="打开的文件">
+    <div class="tab-list" id="tab-list"><!-- 标签由 app.js 动态生成 --></div>
+    <button type="button" class="tab-new" id="tab-new" data-tip="新建标签" aria-label="新建标签">+</button>
+  </div>
+
+  <!-- 标签右键菜单 -->
+  <div class="tab-menu hidden" id="tab-menu">
+    <button type="button" data-tab-menu="newwin">在新窗口打开</button>
+    <button type="button" data-tab-menu="close">关闭标签</button>
+    <button type="button" data-tab-menu="closeothers">关闭其他</button>
+    <button type="button" data-tab-menu="closeall">关闭全部</button>
+    <button type="button" data-tab-menu="copypath">复制路径</button>
+    <button type="button" data-tab-menu="reveal">打开文件位置</button>
+  </div>
+
   <!-- ============================ 编辑区 ============================ -->
   <div class="editor-wrap" id="editor-wrap">
     <!-- Markdown 大纲侧栏（默认隐藏，工具栏「大纲」按钮切换；sticky 钉在左，长文档内部可滚） -->
@@ -58,7 +77,7 @@
       <div class="md-outline-list" id="md-outline-list"></div>
     </div>
     <div class="editor" id="editor" contenteditable="true"
-         data-placeholder="在此输入内容，或把本地 .html / .md 文件拖进来…" spellcheck="true"></div>
+         data-placeholder="在此输入内容，或把本地文件拖进来…" spellcheck="true"></div>
     <div class="source-view-wrap" id="source-view-wrap">
       <pre class="source-hl" id="source-hl" aria-hidden="true"><code></code></pre>
       <textarea class="source-view" id="source-view" spellcheck="false"></textarea>
@@ -139,15 +158,28 @@
     </div>
   </div>
 
-  <!-- ============================ 关闭确认弹窗 ============================ -->
+  <!-- ============================ 关窗确认弹窗 ============================ -->
   <div class="modal hidden" id="close-dialog">
     <div class="modal-card">
       <h3>未保存的更改</h3>
-      <p class="modal-desc">文档有修改尚未保存，直接关闭将丢失这些更改。</p>
+      <p class="modal-desc" id="close-desc">文档有修改尚未保存，直接关闭将丢失这些更改。</p>
       <div class="modal-actions">
         <button id="close-cancel">取消</button>
-        <button id="close-discard">直接关闭</button>
-        <button class="primary" id="close-save">保存并关闭</button>
+        <button id="close-discard">不保存，留副本</button>
+        <button class="primary" id="close-save">全部保存并关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ 关闭标签确认弹窗 ============================ -->
+  <div class="modal hidden" id="tab-close-dialog">
+    <div class="modal-card">
+      <h3>未保存的更改</h3>
+      <p class="modal-desc" id="tab-close-desc">这个文件的修改还没保存。</p>
+      <div class="modal-actions">
+        <button id="tab-close-cancel">取消</button>
+        <button id="tab-close-discard">不保存，留副本</button>
+        <button class="primary" id="tab-close-save">保存并关闭</button>
       </div>
     </div>
   </div>

@@ -192,6 +192,8 @@ window.PDFApp = (function () {
         .replace(/(\s*\*\s*)+$/, "");      // 再清掉累积的 * 脏标记
       document.title = t + (dirty ? " * · 墨笺" : " · 墨笺");
     } catch (e) {}
+    // 多标签：PDF 自己的脏状态变化时，同步当前标签上的圆点（不改窗口标题口径）
+    if (window.__mjRefreshTabDirty) window.__mjRefreshTabDirty();
   }
 
   /* =====================================================================
@@ -915,6 +917,7 @@ window.PDFApp = (function () {
     const ew = $("editor-wrap"); if (ew) ew.style.display = "";
     const tb = $("toolbar"); if (tb) tb.classList.remove("hidden");
     window.__pdfActive = false;
+    dirty = false;   // 切标签销毁视图时清脏，避免 viewerDirty() 对已切走的标签仍报 true
     if (window.__updateEncodingVisible) window.__updateEncodingVisible();   // 回编辑界面恢复编码选框
     window.__pdfPath = null;
     pdfDoc = null; pdfBytes = null; pdfLibDoc = null;
@@ -2596,12 +2599,15 @@ window.PDFApp = (function () {
   }
 
   function isActive() { return !!(pdfRoot && !pdfRoot.classList.contains("hidden")); }
+  /* 供多标签切换前判断「有未保存的旋转 / 签章 / 水印」：切走会销毁 PDF 状态，
+     必须先让用户保存或明确丢弃，不能静默重建。 */
+  function isDirty() { return dirty; }
 
   init();
 
   return {
     open: open, close: close, save: save, saveAs: saveAs, undo: undo, merge: merge,
-    isActive: isActive, init: init,
+    isActive: isActive, isDirty: isDirty, init: init,
     getToolbarCtx: getToolbarCtx,
     resetToolbar: resetPdfToolbar,
     renderToolbar: renderPdfToolbar,

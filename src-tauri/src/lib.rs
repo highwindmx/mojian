@@ -1,5 +1,6 @@
 mod commands;
 mod file_kind;
+mod text_codec;
 
 use tauri::Manager;
 
@@ -10,6 +11,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::open_file,
             commands::save_file,
+            commands::save_unsaved_backup,
             commands::read_image_base64,
             commands::read_file_base64,
             commands::save_file_bytes,

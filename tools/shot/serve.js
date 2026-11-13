@@ -92,7 +92,7 @@ function buildPage(kind, winSize) {
         if (cmd === "list_supported_files") return Promise.resolve([]);
         if (cmd === "get_file_association_state") return Promise.resolve({});
         if (cmd === "load_signatures") return Promise.resolve("[]");
-        if (cmd === "get_app_version") return Promise.resolve("1.0.7");
+        if (cmd === "get_app_version") return Promise.resolve("1.0.8");
         if (cmd === "save_file" || cmd === "save_file_bytes") return Promise.resolve(null);
         return Promise.resolve(null);
       },

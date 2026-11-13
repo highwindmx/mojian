@@ -9,12 +9,18 @@ use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 use zip::ZipArchive;
 
-/// 打开文件返回的结构体
+/// 打开文件返回的结构体。
+/// `encoding` / `bom` / `line_ending` 是原文件的格式元数据，保存时原样回传，
+/// 保证 GBK 不被悄悄改成 UTF-8、BOM 不丢、CRLF 不被 textarea 吞成 LF。
 #[derive(Serialize)]
 pub struct FileContent {
     pub path: String,
     pub kind: String,
     pub content: String,
+    pub encoding: String,
+    pub bom: String,
+    pub line_ending: String,
+    pub read_only: bool,
 }
 
 /// 保存文件返回的结构体
@@ -46,60 +52,110 @@ pub struct BytesFile {
     pub data: String,
 }
 
-/// 打开本地文件：按后缀路由类型，返回原始文本。
-/// encoding: 可选 "gbk" / "utf-8"；省略时优先 UTF-8，失败后回退 GBK 兜底。
+/// 打开本地文件：按后缀路由类型，返回原始文本 + 格式元数据。
+///
+/// - 已知类型（md / html / json / svg / text）走各自渲染通道，可编辑可写回；
+/// - 未知后缀：先做二进制嗅探，判定为文本则按 `text` 打开（可编辑、可写回原文件，
+///   仍不抢系统文件关联）；
+/// - 二进制 / 明显非文本：明确报错，绝不静默解成乱码后还允许保存。
+///
+/// encoding: 可选 "gbk" / "utf-8" / "utf-16le" / "utf-16be"；省略时自动识别
+/// （BOM 优先 → UTF-8 → GBK）。
 #[tauri::command]
 pub fn open_file(path: String, encoding: Option<String>) -> Result<FileContent, String> {
-    let kind = crate::file_kind::detect_kind(&path)?;
+    let class = crate::file_kind::classify(&path);
+    // 未知后缀文本：允许编辑与写回，但仍保留严格二进制嗅探（strict_binary=true）
+    // 防止把 .exe / .png 等二进制误解后写坏。read_only 仅为历史保留字段，文本一律为 false。
+    let (kind, read_only, strict_binary) = match class {
+        crate::file_kind::FileClass::Known(k) => {
+            if k == "pdf" || k == "epub" {
+                return Err(format!("{} 请走对应的阅读通道，不能用文本编辑器打开", path));
+            }
+            (k, false, false)
+        }
+        crate::file_kind::FileClass::Unknown => ("text".to_string(), false, true),
+    };
     let bytes = fs::read(&path).map_err(|e| format!("读取文件失败：{}", e))?;
-    let content = decode_bytes(&bytes, encoding.as_deref())?;
-    Ok(FileContent { path, kind, content })
+    let d = crate::text_codec::decode(&bytes, encoding.as_deref(), strict_binary)?;
+    Ok(FileContent {
+        path,
+        kind,
+        content: d.content,
+        encoding: d.encoding,
+        bom: d.bom,
+        line_ending: d.line_ending,
+        read_only,
+    })
 }
 
-/// 保存文件：content 已是最终要写盘的文本，原样（按编码）写回指定路径。
-/// encoding: 可选 "gbk" / "utf-8"；省略默认 UTF-8。
+/// 保存文件：content 已是最终要写盘的文本。
+/// 新增可选 `bom` / `line_ending`，由前端把打开时读到的格式元数据原样回传，实现保真写回。
+/// 旧调用点不传这两个参数时按「UTF-8 / 无 BOM / LF」处理，保持兼容。
 #[tauri::command]
 pub fn save_file(
     path: String,
     kind: String,
     content: String,
     encoding: Option<String>,
+    bom: Option<String>,
+    line_ending: Option<String>,
 ) -> Result<SaveResult, String> {
-    let bytes = encode_string(&content, encoding.as_deref())?;
+    let bytes = crate::text_codec::encode_save(
+        &content,
+        encoding.as_deref(),
+        bom.as_deref(),
+        line_ending.as_deref(),
+    )?;
     fs::write(&path, bytes).map_err(|e| format!("写入文件失败：{}", e))?;
     Ok(SaveResult { path, kind })
 }
 
-/// 字节按编码解码为字符串
-fn decode_bytes(bytes: &[u8], encoding: Option<&str>) -> Result<String, String> {
-    match encoding.map(|s| s.to_ascii_lowercase()).as_deref() {
-        Some("gbk") | Some("gb2312") => {
-            let (cow, _, _) = encoding_rs::GBK.decode(bytes);
-            Ok(cow.into_owned())
-        }
-        Some("utf-8") | Some("utf8") => {
-            String::from_utf8(bytes.to_vec()).map_err(|e| format!("UTF-8 解码失败：{}", e))
-        }
-        _ => match String::from_utf8(bytes.to_vec()) {
-            Ok(s) => Ok(s),
-            Err(_) => {
-                // 未指定编码时，UTF-8 失败再尝试 GBK（兼容国内老文档）
-                let (cow, _, _) = encoding_rs::GBK.decode(bytes);
-                Ok(cow.into_owned())
-            }
-        },
-    }
-}
+/// 把「未保存就丢弃」的内容在系统临时目录留一份副本，返回副本绝对路径。
+///
+/// 多标签下用户点「不保存」关闭标签（或直接关窗）时调用，作为可找回的安全网。
+/// 文件名为「原名-时间戳.原扩展名」，重名自动加序号；按 encoding / bom /
+/// line_ending 编码，与 save_file 同口径，副本可直接打开使用。
+/// PDF / EPUB 是二进制阅读视图，不走这里（前端只提示不写副本）。
+#[tauri::command]
+pub fn save_unsaved_backup(
+    path: String,
+    content: String,
+    encoding: Option<String>,
+    bom: Option<String>,
+    line_ending: Option<String>,
+) -> Result<String, String> {
+    let bytes = crate::text_codec::encode_save(
+        &content,
+        encoding.as_deref(),
+        bom.as_deref(),
+        line_ending.as_deref(),
+    )?;
+    let dir = std::env::temp_dir().join("mojian").join("unsaved");
+    fs::create_dir_all(&dir).map_err(|e| format!("创建临时目录失败：{}", e))?;
 
-/// 字符串按编码编码为字节
-fn encode_string(s: &str, encoding: Option<&str>) -> Result<Vec<u8>, String> {
-    match encoding.map(|e| e.to_ascii_lowercase()).as_deref() {
-        Some("gbk") | Some("gb2312") => {
-            let (cow, _, _) = encoding_rs::GBK.encode(s);
-            Ok(cow.into_owned())
-        }
-        _ => Ok(s.as_bytes().to_vec()),
+    let src = std::path::Path::new(&path);
+    let stem = src.file_stem().and_then(|s| s.to_str()).unwrap_or("未命名");
+    let ext = src.extension().and_then(|s| s.to_str()).unwrap_or("txt");
+    // 时间戳取运行时毫秒值，避免同一秒内多次丢弃互相覆盖
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let safe_stem: String = stem
+        .chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            _ => c,
+        })
+        .collect();
+    let mut target = dir.join(format!("{}-{}.{}", safe_stem, ts, ext));
+    let mut n = 1;
+    while target.exists() {
+        target = dir.join(format!("{}-{}-{}.{}", safe_stem, ts, n, ext));
+        n += 1;
     }
+    fs::write(&target, bytes).map_err(|e| format!("写入副本失败：{}", e))?;
+    Ok(target.to_string_lossy().into_owned())
 }
 
 /// 读取本地图片并返回 base64（含 MIME），用于编辑器内嵌图片。
@@ -523,8 +579,9 @@ pub fn list_supported_files(dir: String) -> Result<Vec<String>, String> {
             continue;
         }
         let s = p.display().to_string();
-        // 仅保留受支持类型（与打开路由保持一致）
-        if crate::file_kind::detect_kind(&s).is_ok() {
+        // 仅保留「明确支持」的类型；未知后缀虽可按文本只读打开，
+        // 但不进导航列表，避免把整个目录的杂项都塞进「上一个 / 下一个」。
+        if crate::file_kind::is_listed(&s) {
             out.push(s);
         }
     }
@@ -719,9 +776,11 @@ pub fn open_new_instance(
     Ok(())
 }
 
-/// 返回启动时通过命令行参数传入、需要打开的本地文件路径（文件关联双击场景）。
-/// Windows 双击 .md/.html/.pdf 时，系统把路径作为 argv 传给 exe，Tauri 不会自动打开，
-/// 故在此读取：仅取第一个后缀为 .md/.markdown/.html/.htm/.pdf 且确实存在的文件参数；无则 None。
+/// 返回启动时通过命令行参数传入、需要打开的本地文件路径（文件关联 / 打开方式场景）。
+/// Windows 双击已关联的文件时，系统把路径作为 argv 传给 exe，Tauri 不会自动打开。
+/// - 明确支持的类型：直接放行；
+/// - 未知后缀：读文件头做文本嗅探，是文本才放行（前端按只读打开），二进制一律跳过，
+///   避免双击 .exe / .png 时启动墨笺还弹一堆乱码。
 /// 兼容以 file:// 形式传入的路径（剥离前缀与多余斜杠）。
 #[tauri::command]
 pub fn get_initial_file() -> Option<String> {
@@ -730,17 +789,16 @@ pub fn get_initial_file() -> Option<String> {
             Some(s) => s.strip_prefix('/').unwrap_or(s).to_string(),
             None => arg.clone(),
         };
-        let lower = path.to_lowercase();
-        let is_supported = lower.ends_with(".md")
-            || lower.ends_with(".markdown")
-            || lower.ends_with(".html")
-            || lower.ends_with(".htm")
-            || lower.ends_with(".svg")
-            || lower.ends_with(".pdf")
-            || lower.ends_with(".epub")
-            || lower.ends_with(".json");
-        if is_supported && std::path::Path::new(&path).is_file() {
-            return Some(path);
+        if !std::path::Path::new(&path).is_file() {
+            continue;
+        }
+        match crate::file_kind::classify(&path) {
+            crate::file_kind::FileClass::Known(_) => return Some(path),
+            crate::file_kind::FileClass::Unknown => {
+                if crate::text_codec::file_head_is_text(&path) {
+                    return Some(path);
+                }
+            }
         }
     }
     None

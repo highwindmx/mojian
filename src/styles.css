@@ -207,6 +207,133 @@
     background: #dc2626;
   }
 
+  /* ============================ 标签栏（工具栏与编辑区之间） ============================ */
+  .tab-bar {
+    display: flex;
+    align-items: stretch;
+    flex-shrink: 0;
+    height: 34px;
+    padding: 0 6px;
+    gap: 4px;
+    background: var(--color-bg);
+    border-bottom: 1px solid var(--color-border);
+    position: relative;
+    z-index: 6;
+    user-select: none;
+  }
+  .tab-list {
+    display: flex;
+    align-items: stretch;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    gap: 2px;
+  }
+  .tab-list::-webkit-scrollbar { height: 4px; }
+  .tab-list::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: 2px; }
+  .tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    min-width: 88px;
+    max-width: 200px;
+    height: 28px;
+    margin-top: 5px;
+    padding: 0 5px 0 10px;
+    border: 1px solid transparent;
+    border-radius: 6px 6px 0 0;
+    background: transparent;
+    color: var(--color-muted);
+    font-size: 12px;
+    cursor: default;
+    position: relative;
+  }
+  .tab:hover { background: var(--color-surface); color: var(--color-text); }
+  .tab.active {
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    color: var(--color-primary);
+  }
+  .tab.active::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    background: var(--color-primary);
+  }
+  .tab-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tab-dot {
+    flex: 0 0 auto;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #d97706;   /* 与顶栏脏角标同色的琥珀圆点 */
+  }
+  .tab-close {
+    flex: 0 0 auto;
+    width: 17px;
+    height: 17px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-muted);
+    font-size: 13px;
+    line-height: 15px;
+    cursor: default;
+  }
+  .tab-close:hover { background: var(--color-border); color: var(--color-text); }
+  .tab-new {
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    margin-top: 4px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--color-muted);
+    font-size: 16px;
+    line-height: 1;
+    cursor: default;
+  }
+  .tab-new:hover { background: var(--color-surface); color: var(--color-primary); }
+  .tab-menu {
+    position: fixed;
+    z-index: 70;
+    min-width: 150px;
+    padding: 4px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+  }
+  .tab-menu button {
+    display: block;
+    width: 100%;
+    padding: 6px 10px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--color-text);
+    font-size: 12px;
+    text-align: left;
+    cursor: default;
+    white-space: nowrap;
+  }
+  .tab-menu button:hover { background: var(--color-bg); }
+  .tab-menu button:disabled { opacity: 0.45; }
+
   /* ============================ 工具栏 ============================ */
   .toolbar {
     display: flex;
@@ -328,7 +455,8 @@
   /* 换行按钮只作用于源码栏：仅在源码视图(.source-mode)或分栏(.split)时显示 */
   .toolbar button[data-action="softwrap"] { display: none; }
   .toolbar.source-mode button[data-action="softwrap"],
-  .toolbar.split button[data-action="softwrap"] { display: inline-flex; }
+  .toolbar.split button[data-action="softwrap"],
+  .toolbar.text-mode button[data-action="softwrap"] { display: inline-flex; }
   /* 纯源码视图下禁用其它格式化/插入按钮，仅保留 keep 类（缩放/源码/分栏） */
   .toolbar.source-mode button:not(.keep) {
     opacity: 0.4;
@@ -740,6 +868,8 @@
     overflow: auto;
     z-index: 2;
   }
+  /* 文本只读来源（如某些不可写回文件）时底色略区别；可编辑文本不设 readonly，不触发 */
+  .source-view[readonly] { background: var(--color-bg); }
   /* 源码栏改为单层可见 textarea：所见即所选即所查，不再叠加透明/彩色双图层。
      旧方案用「透明 textarea + 下方 .source-hl 彩色层」叠加，易出现显示与框选/查找内容错位、
      两层文字同时可见等问题，故废弃叠加层，.source-hl 已在下方 display:none 隐藏。 */
@@ -1066,7 +1196,7 @@
   /* ============================ 查找替换浮条 ============================ */
   .find-bar {
     position: fixed;
-    top: 90px; /* 兜底值；实际打开时由 app.js 按工具栏底边动态定位 */
+    top: 124px; /* 兜底值（工具栏 + 标签栏）；实际打开时由 app.js 按标签栏底边动态定位 */
     left: 0;
     right: 0;
     width: fit-content;             /* 内容定宽；不要 left:50%+translateX（shrink-to-fit 只剩半屏可用宽，会挤压按钮文字） */

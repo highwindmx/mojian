@@ -47,6 +47,7 @@
     defaultEncoding: "",   // ""=自动(UTF-8 优先, GBK 兜底) | "utf-8" | "gbk"
     sourceSplit: false,    // 源码分栏模式（左渲染右源码）
     toolbarVisible: true,
+    openTabs: [],          // 上次会话打开的文件（重启后按路径重开；每项 { path, scroll }，scroll 记忆滚动位置；旧版纯字符串数组仍兼容）
   };
   let appConfig = Object.assign({}, DEFAULT_CONFIG);
 
@@ -124,6 +125,19 @@
     "zoomout","ZOOMLABEL","zoomin","slides","outline","split","source","softwrap",
   ];
 
+  /** 常见纯文本 / 代码后缀（与 src-tauri/src/file_kind.rs 的 TEXT_EXTS 对齐）。
+   *  用于对话框过滤器与「另存为」的类型判定；不含点、全小写。 */
+  const TEXT_EXTENSIONS = [
+    "txt","text","log","csv","tsv","ini","cfg","conf","config",
+    "yaml","yml","xml","css","scss","less","js","mjs","cjs",
+    "ts","tsx","jsx","json5","jsonc","py","rb","go","rs","java",
+    "kt","c","h","cc","cpp","hpp","cs","sh","bash","zsh","bat",
+    "cmd","ps1","sql","toml","properties","diff","patch","tex",
+    "rst","srt","vtt","lua","php","pl","swift","scala","dart",
+    "vue","svelte","gradle","make","am","asm","s","r","m",
+  ];
+  const TEXT_EXT_RE = new RegExp("\\.(" + TEXT_EXTENSIONS.join("|") + ")$", "i");
+
   /** 解析工具栏配置（缺省回退默认顺序），返回 { order, hidden } */
   function getToolbarConfig() {
     const t = appConfig.toolbar || {};
@@ -151,11 +165,15 @@
   /** 当前可见工具栏项的统一数据源（顺序 + 显隐 + 分隔符），renderToolbar 共用 */
   /** JSON 文档仅保留文件/视图类按钮（表格数据无富文本编辑语义） */
   const JSON_ALLOWED = { new:1, open:1, prevfile:1, nextfile:1, save:1, saveas:1, find:1, zoomout:1, ZOOMLABEL:1, zoomin:1, split:1, source:1, softwrap:1 };
+  /** 纯文本模式：常驻原文视图，故不需要「原文 / 分栏 / 大纲」切换，也不要任何富文本按钮 */
+  const TEXT_ALLOWED = { new:1, open:1, prevfile:1, nextfile:1, save:1, saveas:1, find:1, zoomout:1, ZOOMLABEL:1, zoomin:1, softwrap:1 };
 
   function visibleTokens() {
     const cfg = getToolbarConfig();
     const md = isMarkdownDoc();
     const isJson = !!(currentFile && currentFile.kind === "json");
+    const isText = !!(currentFile && currentFile.kind === "text");
+    const readOnly = !!(currentFile && currentFile.readOnly);
     const out = [];
     cfg.order.forEach(function (token) {
       if (token === "__divider__") { out.push({ divider: true }); return; }
@@ -166,6 +184,9 @@
       if (md && item.htmlOnly) return;
       // JSON 表格视图：仅保留文件/视图类按钮
       if (isJson && !JSON_ALLOWED[token]) return;
+      // 纯文本视图：只留文件/查找/缩放/换行；只读文件不提供「保存」（但可另存为副本）
+      if (isText && !TEXT_ALLOWED[token]) return;
+      if (readOnly && token === "save") return;
       out.push({ token: token, item: item, keep: !!item.keep });
     });
     return out;
@@ -652,8 +673,12 @@
   /** 自动保存定时器 */
   let saveTimer = null;
   /**
-   * 当前打开的文件：{ path, kind }
-   * kind ∈ "html" | "markdown"。为 null 时表示空白草稿（保存走"另存为"）。
+   * 当前打开的文件：{ path, kind, encoding, bom, lineEnding, readOnly }
+   * kind ∈ "html" | "markdown" | "json" | "svg" | "pdf" | "epub" | "text"。
+   * encoding/bom/lineEnding 是打开时从文件读出的格式元数据，保存时原样回传以保真写回；
+   * readOnly 为历史保留字段：文本类文件一律可编辑（未知后缀也经过二进制嗅探保护），该值恒为 false；
+   * EPUB 等视图走独立只读逻辑，不依赖此字段。
+   * 为 null 时表示空白草稿（保存走"另存为"）。
    */
   let currentFile = null;
   /* 关闭保护：savedSignature = 最近一次"打开/保存"时内容的签名（与 contentSignature 同表示），
@@ -669,11 +694,14 @@
   }
   /** 未保存视觉提示：窗口标题前缀 ● + 顶栏徽标（复用关闭保护的 savedSignature 基线） */
   function refreshDirtyMark() {
-    const dirty = hasUnsavedChanges();
+    let dirty = hasUnsavedChanges();
+    // PDF / EPUB 的脏标记来自 pdf.js 自己的 dirty（contentSignature 对整窗视图返回 null）
+    if (currentFile && isViewerKind(currentFile.kind)) dirty = viewerDirty(currentFile.kind);
     try { document.title = (dirty ? "● " : "") + docTitleBase; } catch (e) {}
     // 角标挂在「保存」按钮右上角；若用户在工具栏定制里藏了保存按钮则无角标（仅剩标题前缀兜底）
     const dot = toolbar && toolbar.querySelector('[data-action="save"] .dirty-dot');
     if (dot) dot.classList.toggle("hidden", !dirty);
+    updateTabDirtyDot(dirty);   // 同步当前标签上的琥珀圆点
   }
   let siblingFiles = [];   // 同目录受支持文件列表（按文件名自然排序，全路径）
   let siblingIndex = -1;   // 当前文件在 siblingFiles 中的下标（-1 表示不在列表中）
@@ -691,8 +719,591 @@
   let sourceMode = false;
   /** 是否处于源码分栏模式（左渲染 / 右源码，双向同步） */
   let splitMode = false;
+  /** 是否处于纯文本模式：常驻全屏源码栏，不进 WYSIWYG。
+   *  复用 sourceMode=true 以获得现成的撤销栈 / 脏标记 / 查找 / 换行能力，
+   *  但用 textMode 挡住「把源码回填进富文本编辑器」以及「原文/分栏切换」。 */
+  let textMode = false;
   /** 源码栏（source-view）是否自动换行；false 时长行不换行、可横向滚动 */
   let softWrap = true;
+
+  /* =====================================================================
+   * 多标签：单编辑器 DOM + 每标签快照
+   * ---------------------------------------------------------------------
+   * #editor / #source-view / #toolbar 仍是全局单例，切换标签时把「当前文档的
+   * 全部可变状态」存进 tab.snap，再把目标标签的快照写回同一套 DOM 与全局变量。
+   * 切换前必须清空所有窗口级定时器，否则旧标签的回调会写进新标签的 DOM。
+   * PDF / EPUB 是整窗接管视图（pdf.js 有几十个模块级单例），只存 path + kind，
+   * 切回时按路径重建；有未保存修改时先弹确认，绝不静默丢弃。
+   * ===================================================================== */
+  const tabBar = document.getElementById("tab-bar");
+  const tabList = document.getElementById("tab-list");
+  const tabNewBtn = document.getElementById("tab-new");
+  const tabMenuEl = document.getElementById("tab-menu");
+  const tabCloseDialog = document.getElementById("tab-close-dialog");
+  let tabs = [];
+  let activeTabId = null;
+  let tabSeq = 0;
+  let tabsPersistTimer = null;
+  let tabMenuTabId = null;
+  let tabChoiceResolver = null;
+
+  function activeTab() { return tabs.find(function (t) { return t.id === activeTabId; }) || null; }
+  function isViewerKind(k) { return k === "pdf" || k === "epub"; }
+  function baseName(p) {
+    if (!p) return "未命名";
+    const s = String(p).replace(/\\/g, "/");
+    return s.slice(s.lastIndexOf("/") + 1) || "未命名";
+  }
+  function tabTitleFor(t) {
+    const p = (currentFile && currentFile.path) || t.path;
+    return p ? baseName(p) : "未命名";
+  }
+  function guessKindFromPath(p) {
+    const l = String(p || "").toLowerCase();
+    if (l.endsWith(".pdf")) return "pdf";
+    if (l.endsWith(".epub")) return "epub";
+    if (l.endsWith(".md") || l.endsWith(".markdown")) return "markdown";
+    if (l.endsWith(".svg")) return "svg";
+    if (l.endsWith(".json")) return "json";
+    if (l.endsWith(".html") || l.endsWith(".htm")) return "html";
+    return "text";
+  }
+  function viewerDirty(k) {
+    // 只有 PDF 视图确实激活、且当前标签就是 PDF 时才读 pdf.js 的全局 dirty；
+    // 否则已切走的 PDF 标签会被误判成一直有未保存修改。
+    if (k === "pdf" && window.__pdfActive && currentFile && currentFile.kind === "pdf") {
+      return !!(window.PDFApp && window.PDFApp.isDirty && window.PDFApp.isDirty());
+    }
+    return false;   // EPUB 只读
+  }
+  window.__mjRefreshTabDirty = function () {
+    try { updateTabDirtyDot(viewerDirty("pdf")); } catch (e) {}
+  };
+  function addTabObject(o) {
+    const t = {
+      id: "tab-" + (++tabSeq),
+      path: o.path || null,
+      kind: o.kind || "markdown",
+      title: o.title || "未命名",
+      dirty: false,
+      snap: null,
+    };
+    tabs.push(t);
+    activeTabId = t.id;
+    return t;
+  }
+  function removeTabObject(id) {
+    const i = tabs.findIndex(function (t) { return t.id === id; });
+    if (i >= 0) tabs.splice(i, 1);
+  }
+
+  /** 切标签前清空所有窗口级定时器（它们的回调直接持有单例 DOM 引用）。 */
+  function flushTabTimers() {
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    if (outlineTimer) { clearTimeout(outlineTimer); outlineTimer = null; }
+    if (syncToSourceTimer) { clearTimeout(syncToSourceTimer); syncToSourceTimer = null; }
+    if (syncToEditorTimer) { clearTimeout(syncToEditorTimer); syncToEditorTimer = null; }
+    if (linkEditorCaretTimer) { clearTimeout(linkEditorCaretTimer); linkEditorCaretTimer = null; }
+    if (linkSourceCaretTimer) { clearTimeout(linkSourceCaretTimer); linkSourceCaretTimer = null; }
+    if (linkEditorScrollTimer) { clearTimeout(linkEditorScrollTimer); linkEditorScrollTimer = null; }
+    if (linkSourceScrollTimer) { clearTimeout(linkSourceScrollTimer); linkSourceScrollTimer = null; }
+    if (caretSyncTimer) { clearTimeout(caretSyncTimer); caretSyncTimer = null; }
+    if (hlTimer) { clearTimeout(hlTimer); hlTimer = null; }
+    splitLinkBusyUntil = 0;
+    if (typeof invalidateSplitMap === "function") invalidateSplitMap();
+    if (typeof invalidateFind === "function") invalidateFind();
+  }
+
+  /** 把编辑区还原到「干净的空白状态」，不走 enter / exit 系列函数（那些会写全局配置、切签名口径）。 */
+  function resetViewToPlain() {
+    if (window.__pdfActive && window.PDFApp) window.PDFApp.close();
+    if (window.__epubActive) exitEpub();
+    if (editorWrap) {
+      editorWrap.classList.remove("source", "split", "outline-open");
+      editorWrap.style.display = "";
+    }
+    if (toolbar) {
+      toolbar.classList.remove("source-mode", "split", "text-mode");
+      toolbar.classList.remove("hidden");
+    }
+    if (editor) { editor.style.display = ""; editor.contentEditable = "true"; editor.innerHTML = ""; }
+    if (sourceView) { sourceView.style.display = ""; sourceView.readOnly = false; sourceView.value = ""; }
+    sourceMode = false; splitMode = false; textMode = false;
+    try { closeMdOutline(); } catch (e) {}
+    const fs = document.getElementById("file-style");
+    if (fs) fs.remove();
+    if (findBar) findBar.classList.add("hidden");
+    renderFind = null; sourceFind = null;
+  }
+
+  /** 采集当前文档的完整快照（内容 / 撤销栈 / 模式 / DOM 派生状态 / 滚动 / 查找）。 */
+  function makeSnapshot() {
+    const fs = document.getElementById("file-style");
+    return {
+      html: editor.innerHTML,
+      source: sourceView.value,
+      savedSignature: savedSignature,
+      history: history.map(function (s) { return Object.assign({}, s); }),
+      historyIndex: historyIndex,
+      lastWasCommand: lastWasCommand,
+      lastChangeTs: lastChangeTs,
+      currentFile: currentFile ? Object.assign({}, currentFile) : null,
+      docTitleBase: docTitleBase,
+      loadedHead: loadedHead,
+      loadedTitle: loadedTitle,
+      currentJson: currentJson,
+      jsonOk: jsonOk,
+      sourceMode: sourceMode, splitMode: splitMode, textMode: textMode, softWrap: softWrap,
+      siblingFiles: siblingFiles.slice(), siblingIndex: siblingIndex,
+      wrapSource: editorWrap.classList.contains("source"),
+      wrapSplit: editorWrap.classList.contains("split"),
+      wrapOutline: editorWrap.classList.contains("outline-open"),
+      tbSource: toolbar.classList.contains("source-mode"),
+      tbSplit: toolbar.classList.contains("split"),
+      tbText: toolbar.classList.contains("text-mode"),
+      editorDisplay: editor.style.display,
+      sourceDisplay: sourceView.style.display,
+      editorEditable: editor.contentEditable,
+      sourceReadOnly: sourceView.readOnly,
+      fileStyle: fs ? fs.textContent : "",
+      outlineHtml: mdOutlineList ? mdOutlineList.innerHTML : "",
+      outlineHidden: mdOutline ? mdOutline.classList.contains("hidden") : true,
+      scroll: {
+        wrap: editorWrap.scrollTop,
+        editor: editor.scrollTop,
+        source: sourceView.scrollTop,
+        sourceHl: sourceHl ? sourceHl.scrollTop : 0,
+      },
+      caret: { start: sourceView.selectionStart, end: sourceView.selectionEnd },
+      encodingValue: encodingSelect ? encodingSelect.value : "",
+      findOpen: findBar ? !findBar.classList.contains("hidden") : false,
+      findQuery: findInput ? findInput.value : "",
+      findReplace: replaceInput ? replaceInput.value : "",
+      findCase: findCase ? !!findCase.checked : false,
+      findSide: lastFindSide,
+    };
+  }
+
+  function captureActiveTab() {
+    const t = activeTab();
+    if (!t) return;
+    t.title = tabTitleFor(t);
+    if (isViewerKind(t.kind)) { t.dirty = viewerDirty(t.kind); return; }
+    t.snap = makeSnapshot();
+    t.dirty = hasUnsavedChanges();
+  }
+
+  /** 把快照写回单例 DOM / 全局变量；恢复顺序：先变量与模式，后内容，最后重算签名。 */
+  function restoreTab(tab) {
+    flushTabTimers();
+    resetViewToPlain();
+    if (isViewerKind(tab.kind)) {
+      currentFile = { path: tab.path, kind: tab.kind };
+      siblingFiles = []; siblingIndex = -1;
+      history = [takeSnapshot()]; historyIndex = 0;
+      lastWasCommand = true; lastChangeTs = Date.now();
+      savedSignature = "";
+      renderToolbar();
+      setFilePath(tab.path || "", true);
+      if (tab.kind === "pdf") {
+        if (window.PDFApp) window.PDFApp.open(tab.path);
+      } else {
+        openEpub(tab.path);
+      }
+      refreshDirtyMark();
+      try { refreshSiblings(); } catch (e) {}   // 整窗视图也重算「上一个 / 下一个」
+      return;
+    }
+    const s = tab.snap;
+    if (!s) {
+      // 空快照兜底：只在当前标签内初始化空白文档，绝不再新建一个标签
+      currentFile = { path: tab.path, kind: tab.kind };
+      history = [takeSnapshot()]; historyIndex = 0;
+      lastWasCommand = true; lastChangeTs = Date.now();
+      savedSignature = contentSignature();
+      renderToolbar();
+      setFilePath(tab.path || "", !!tab.path);
+      updatePlaceholder(); updateToolbarState(); updateEditorStatus();
+      refreshDirtyMark();
+      tab.snap = makeSnapshot();
+      return;
+    }
+    currentFile = s.currentFile ? Object.assign({}, s.currentFile) : null;
+    savedSignature = s.savedSignature;
+    history = s.history.map(function (x) { return Object.assign({}, x); });
+    historyIndex = s.historyIndex;
+    lastWasCommand = s.lastWasCommand;
+    lastChangeTs = s.lastChangeTs;
+    docTitleBase = s.docTitleBase;
+    loadedHead = s.loadedHead; loadedTitle = s.loadedTitle;
+    currentJson = s.currentJson; jsonOk = s.jsonOk;
+    sourceMode = s.sourceMode; splitMode = s.splitMode; textMode = s.textMode;
+    softWrap = s.softWrap;
+    siblingFiles = s.siblingFiles.slice(); siblingIndex = s.siblingIndex;
+    editor.innerHTML = s.html;
+    sourceView.value = s.source;
+    editorWrap.classList.toggle("source", s.wrapSource);
+    editorWrap.classList.toggle("split", s.wrapSplit);
+    editorWrap.classList.toggle("outline-open", s.wrapOutline);
+    toolbar.classList.toggle("source-mode", s.tbSource);
+    toolbar.classList.toggle("split", s.tbSplit);
+    toolbar.classList.toggle("text-mode", s.tbText);
+    editor.style.display = s.editorDisplay;
+    sourceView.style.display = s.sourceDisplay;
+    editor.contentEditable = s.editorEditable;
+    sourceView.readOnly = s.sourceReadOnly;
+    sourceView.wrap = softWrap ? "soft" : "off";
+    sourceView.classList.toggle("wrap-off", !softWrap);
+    if (s.fileStyle) {
+      const st = document.createElement("style");
+      st.id = "file-style";
+      st.textContent = s.fileStyle;
+      document.head.appendChild(st);
+    }
+    if (mdOutlineList) mdOutlineList.innerHTML = s.outlineHtml;
+    if (mdOutline) mdOutline.classList.toggle("hidden", s.outlineHidden);
+    if (encodingSelect) encodingSelect.value = s.encodingValue || "";
+    if (findInput) findInput.value = s.findQuery || "";
+    if (replaceInput) replaceInput.value = s.findReplace || "";
+    if (findCase) findCase.checked = !!s.findCase;
+    lastFindSide = s.findSide || "editor";
+    renderFind = null; sourceFind = null;
+    if (findBar) findBar.classList.toggle("hidden", !s.findOpen);
+    renderToolbar();
+    setFilePath(currentFile && currentFile.path ? currentFile.path : "", !!(currentFile && currentFile.path));
+    updateNavButtons();
+    updatePlaceholder();
+    updateToolbarState();
+    updateEditorStatus();
+    setSourceBtnActive();
+    try { refreshAfterRender(); } catch (e) {}
+    try { resolveLocalImages(); } catch (e) {}
+    editorWrap.scrollTop = s.scroll.wrap;
+    editor.scrollTop = s.scroll.editor;
+    sourceView.scrollTop = s.scroll.source;
+    if (sourceHl) sourceHl.scrollTop = s.scroll.sourceHl;
+    try { sourceView.setSelectionRange(s.caret.start, s.caret.end); } catch (e) {}
+    // 目录导航按当前标签的文件重新扫描（打开时 refreshSiblings 是异步的，快照可能偏早）
+    try { refreshSiblings(); } catch (e) {}
+    refreshDirtyMark();
+  }
+
+  /** 标签栏渲染（数据驱动，切标签只重建这一小块，绝不动 #toolbar）。 */
+  function renderTabs() {
+    if (!tabList) return;
+    tabList.innerHTML = "";
+    tabs.forEach(function (t) {
+      const el = document.createElement("div");
+      el.className = "tab" + (t.id === activeTabId ? " active" : "");
+      el.dataset.tabId = t.id;
+      el.setAttribute("role", "tab");
+      el.setAttribute("aria-selected", t.id === activeTabId ? "true" : "false");
+      el.dataset.tip = t.path || t.title;
+      el.setAttribute("aria-label", t.title);
+      const label = document.createElement("span");
+      label.className = "tab-label";
+      label.textContent = t.title;
+      el.appendChild(label);
+      const dot = document.createElement("span");
+      dot.className = "tab-dot" + (t.dirty ? "" : " hidden");
+      el.appendChild(dot);
+      const close = document.createElement("button");
+      close.type = "button";
+      close.className = "tab-close";
+      close.dataset.tabClose = t.id;
+      close.textContent = "✕";
+      close.dataset.tip = "关闭标签";
+      close.setAttribute("aria-label", "关闭 " + t.title);
+      el.appendChild(close);
+      tabList.appendChild(el);
+    });
+    const act = tabList.querySelector(".tab.active");
+    if (act) {
+      const ar = act.getBoundingClientRect();
+      const lr = tabList.getBoundingClientRect();
+      if (ar.left < lr.left) tabList.scrollLeft -= (lr.left - ar.left);
+      else if (ar.right > lr.right) tabList.scrollLeft += (ar.right - lr.right);
+    }
+  }
+
+  /** 顶部窗格标题 / 保存角标之外，同步当前标签上的琥珀圆点。 */
+  function updateTabDirtyDot(dirty) {
+    const t = activeTab();
+    if (!t) return;
+    t.dirty = !!dirty;
+    if (!tabList) return;
+    const dot = tabList.querySelector('[data-tab-id="' + t.id + '"] .tab-dot');
+    if (dot) dot.classList.toggle("hidden", !dirty);
+  }
+
+  function persistOpenTabs() {
+    if (tabsPersistTimer) clearTimeout(tabsPersistTimer);
+    tabsPersistTimer = setTimeout(function () {
+      saveConfig({ openTabs: tabs.filter(function (t) { return !!t.path; }).map(function (t) {
+        const sc = (t.snap && t.snap.scroll) ? t.snap.scroll : { wrap: 0, editor: 0, source: 0, sourceHl: 0 };
+        return { path: t.path, scroll: sc };
+      }) });
+    }, 300);
+  }
+
+  /* ---------- 三态确认弹窗：取消 / 不保存（留副本）/ 保存 ---------- */
+  function finishTabChoice(value) {
+    if (tabCloseDialog) closeModal(tabCloseDialog);
+    const r = tabChoiceResolver;
+    tabChoiceResolver = null;
+    if (r) r(value);
+  }
+  function askTabChoice(msg, opts) {
+    opts = opts || {};
+    if (!tabCloseDialog) return Promise.resolve("cancel");
+    const desc = document.getElementById("tab-close-desc");
+    const bs = document.getElementById("tab-close-save");
+    const bd = document.getElementById("tab-close-discard");
+    if (desc) desc.textContent = msg;
+    if (bs) bs.textContent = opts.saveLabel || "保存并关闭";
+    if (bd) bd.textContent = opts.discardLabel || "不保存，留副本";
+    openModal(tabCloseDialog);
+    return new Promise(function (resolve) { tabChoiceResolver = resolve; });
+  }
+  if (tabCloseDialog) {
+    const bc = document.getElementById("tab-close-cancel");
+    const bd = document.getElementById("tab-close-discard");
+    const bs = document.getElementById("tab-close-save");
+    if (bc) bc.addEventListener("click", function () { finishTabChoice("cancel"); });
+    if (bd) bd.addEventListener("click", function () { finishTabChoice("discard"); });
+    if (bs) bs.addEventListener("click", function () { finishTabChoice("save"); });
+    tabCloseDialog.addEventListener("click", function (e) {
+      if (e.target === tabCloseDialog) finishTabChoice("cancel");
+    });
+  }
+
+  /** 未保存内容在系统临时目录留一份可找回的副本（文本类标签）。 */
+  async function backupTab(t) {
+    if (isViewerKind(t.kind)) return null;   // PDF / EPUB 是二进制视图，不生成文本副本
+    if (t.id !== activeTabId) await activateTab(t.id, { force: true });
+    const f = currentFile || {};
+    const kind = f.kind || t.kind;
+    const content = serializeCurrentForSave(kind);
+    const ext = kind === "markdown" ? "md" : (kind === "html" ? "html" : (t.path ? baseName(t.path).split(".").pop() : "txt"));
+    const path = f.path || t.path || ("未命名." + ext);
+    const enc = (encodingSelect && encodingSelect.value) || f.encoding || "";
+    try {
+      const saved = await tauriInvoke("save_unsaved_backup", {
+        path: path, content: content,
+        encoding: enc, bom: f.bom || "", lineEnding: f.lineEnding || "",
+      });
+      setStatus("已在临时目录留副本：" + saved);
+      showToast("已在临时目录留下一份副本");
+      return saved;
+    } catch (e) {
+      setStatus("留副本失败：" + e, true);
+      return null;
+    }
+  }
+
+  /** 离开 PDF / EPUB 标签前：有未保存修改必须让用户选择，绝不静默重建。 */
+  async function mayLeaveTab(t) {
+    if (!isViewerKind(t.kind) || !viewerDirty(t.kind)) return true;
+    const choice = await askTabChoice(
+      "这个 PDF 有未保存的旋转 / 签章 / 水印。切换标签会重建视图，这些修改会丢失。",
+      { saveLabel: "保存并切换", discardLabel: "不保存，直接切换" }
+    );
+    if (choice === "cancel") return false;
+    if (choice === "save") {
+      if (window.PDFApp) await window.PDFApp.save();
+      return !viewerDirty("pdf");
+    }
+    return true;
+  }
+
+  async function activateTab(id, opts) {
+    opts = opts || {};
+    if (id === activeTabId) return true;
+    const target = tabs.find(function (t) { return t.id === id; });
+    if (!target) return false;
+    const cur = activeTab();
+    if (cur && !opts.force && !(await mayLeaveTab(cur))) return false;
+    captureActiveTab();
+    activeTabId = id;
+    restoreTab(target);
+    renderTabs();
+    persistOpenTabs();
+    return true;
+  }
+
+  function cycleTab(delta) {
+    if (tabs.length < 2) return;
+    const i = tabs.findIndex(function (t) { return t.id === activeTabId; });
+    activateTab(tabs[(i + delta + tabs.length) % tabs.length].id);
+  }
+
+  async function closeTab(id) {
+    const t = tabs.find(function (x) { return x.id === id; });
+    if (!t) return;
+    // viewerDirty 读的是 pdf.js 的全局状态，只允许对「当前激活的」PDF 标签取用，
+    // 否则切走后残留的 dirty 会让其它 PDF 标签被误判成未保存。
+    const isDirtyNow = t.dirty || (t.id === activeTabId && viewerDirty(t.kind));
+    if (isDirtyNow) {
+      const msg = isViewerKind(t.kind)
+        ? "这个 PDF 有未保存的旋转 / 签章 / 水印，关闭后无法找回。"
+        : "「" + t.title + "」的修改还没保存。不保存会在临时目录留一份副本。";
+      const choice = await askTabChoice(msg, {
+        saveLabel: "保存并关闭",
+        discardLabel: isViewerKind(t.kind) ? "不保存，直接关闭" : "不保存，留副本",
+      });
+      if (choice === "cancel") return;
+      if (choice === "save") {
+        if (t.id !== activeTabId) await activateTab(t.id, { force: true });
+        await saveFile();
+        if (activeTab() && activeTab().dirty && !isViewerKind(t.kind)) {
+          setStatus("保存未完成，标签保留", true);
+          return;
+        }
+      } else {
+        await backupTab(t);
+      }
+    }
+    const idx = tabs.indexOf(t);
+    removeTabObject(id);
+    if (id === activeTabId) {
+      const next = tabs[Math.min(idx, tabs.length - 1)] || null;
+      if (next) { activeTabId = next.id; restoreTab(next); }
+      else { activeTabId = null; await newBlankTab("markdown"); }
+    }
+    renderTabs();
+    persistOpenTabs();
+  }
+
+  /** 打开路径：同路径已开则激活，否则新建标签再装载；失败自动撤销空标签。 */
+  async function openPathInTab(path, opts) {
+    if (!path) return false;
+    const existing = tabs.find(function (t) { return t.path && t.path === path; });
+    if (existing) { await activateTab(existing.id); return true; }
+    captureActiveTab();
+    const t = addTabObject({ path: path, kind: guessKindFromPath(path), title: baseName(path) });
+    resetViewToPlain();
+    let ok = false;
+    try { ok = await openFileWithPath(path, opts); } catch (e) { ok = false; }
+    if (!ok) {
+      removeTabObject(t.id);
+      const back = tabs[tabs.length - 1];
+      if (back) { activeTabId = back.id; restoreTab(back); }
+      else { activeTabId = null; await newBlankTab("markdown"); }
+      renderTabs();
+      persistOpenTabs();
+      return false;
+    }
+    t.kind = (currentFile && currentFile.kind) || t.kind;
+    t.path = (currentFile && currentFile.path) || path;
+    t.title = baseName(t.path);
+    captureActiveTab();
+    renderTabs();
+    persistOpenTabs();
+    return true;
+  }
+
+  /** 新建空白标签（不再开新窗口）。 */
+  async function newBlankTab(kind) {
+    captureActiveTab();
+    resetViewToPlain();
+    const t = addTabObject({ path: null, kind: kind, title: "未命名" });
+    currentFile = { path: null, kind: kind };
+    history = [takeSnapshot()]; historyIndex = 0;
+    lastWasCommand = true; lastChangeTs = Date.now();
+    savedSignature = contentSignature();
+    docTitleBase = "墨笺";
+    loadedHead = ""; loadedTitle = "";
+    siblingFiles = []; siblingIndex = -1;
+    renderToolbar();
+    setFilePath("", false);
+    updatePlaceholder();
+    updateToolbarState();
+    updateEditorStatus();
+    refreshDirtyMark();
+    captureActiveTab();
+    t.title = "未命名";
+    renderTabs();
+    persistOpenTabs();
+    return t;
+  }
+
+  /* ---------- 标签栏事件：点击切换 / 关闭 / 中键关闭 / 右键菜单 / 滚轮横移 ---------- */
+  function hideTabMenu() { if (tabMenuEl) tabMenuEl.classList.add("hidden"); }
+  function openTabMenu(x, y) {
+    if (!tabMenuEl) return;
+    tabMenuEl.classList.remove("hidden");
+    tabMenuEl.style.left = Math.max(0, Math.min(x, window.innerWidth - 170)) + "px";
+    tabMenuEl.style.top = Math.max(0, Math.min(y, window.innerHeight - 220)) + "px";
+  }
+  if (tabList) {
+    tabList.addEventListener("click", function (e) {
+      const c = e.target.closest("[data-tab-close]");
+      if (c) { closeTab(c.dataset.tabClose); return; }
+      const el = e.target.closest("[data-tab-id]");
+      if (el) activateTab(el.dataset.tabId);
+    });
+    tabList.addEventListener("auxclick", function (e) {
+      if (e.button !== 1) return;
+      const el = e.target.closest("[data-tab-id]");
+      if (el) { e.preventDefault(); closeTab(el.dataset.tabId); }
+    });
+    tabList.addEventListener("contextmenu", function (e) {
+      const el = e.target.closest("[data-tab-id]");
+      if (!el) return;
+      e.preventDefault();
+      e.stopPropagation();
+      tabMenuTabId = el.dataset.tabId;
+      openTabMenu(e.clientX, e.clientY);
+    });
+    tabList.addEventListener("wheel", function (e) {
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        tabList.scrollLeft += e.deltaY;
+        e.preventDefault();
+      }
+    }, { passive: false });
+    tabList.addEventListener("mousedown", function (e) {
+      if (e.target.closest("[data-tab-id]")) e.preventDefault();
+    });
+  }
+  if (tabNewBtn) tabNewBtn.addEventListener("click", function () { openNewDialog(); });
+  document.addEventListener("click", function (e) {
+    if (tabMenuEl && !tabMenuEl.contains(e.target)) hideTabMenu();
+  });
+  if (tabMenuEl) {
+    tabMenuEl.addEventListener("click", async function (e) {
+      const b = e.target.closest("[data-tab-menu]");
+      if (!b) return;
+      const t = tabs.find(function (x) { return x.id === tabMenuTabId; });
+      hideTabMenu();
+      if (!t) return;
+      const act = b.dataset.tabMenu;
+      if (act === "newwin") { if (t.path) openInNewInstance(t.path); }
+      else if (act === "close") await closeTab(t.id);
+      else if (act === "closeothers") {
+        for (const x of tabs.slice()) if (x.id !== t.id) await closeTab(x.id);
+      } else if (act === "closeall") {
+        for (const x of tabs.slice()) await closeTab(x.id);
+      } else if (act === "copypath") {
+        if (!t.path) { setStatus("这个标签还没有保存过文件", true); return; }
+        try { await navigator.clipboard.writeText(t.path); showToast("已复制路径"); }
+        catch (err) { setStatus("路径：" + t.path); }
+      } else if (act === "reveal") {
+        if (!t.path) { setStatus("这个标签还没有保存过文件", true); return; }
+        try { await tauriInvoke("open_containing_folder", { path: t.path }); }
+        catch (err) { setStatus("打开位置失败：" + err, true); }
+      }
+    });
+  }
+  /* 标签快捷键：Ctrl+Tab / Ctrl+Shift+Tab 切换，Ctrl+W 关闭，Ctrl+S 在源码栏也生效。
+     editor 自己的 keydown 已处理 Ctrl+S 等，故此处跳过已 preventDefault 的事件。 */
+  document.addEventListener("keydown", function (e) {
+    if (e.defaultPrevented) return;
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const k = e.key.toLowerCase();
+    if (k === "s") { e.preventDefault(); saveFile(); }
+    else if (k === "w") { e.preventDefault(); const t = activeTab(); if (t) closeTab(t.id); }
+    else if (k === "tab") { e.preventDefault(); cycleTab(e.shiftKey ? -1 : 1); }
+  });
 
   /* =====================================================================
    * 工具函数：HTML 转义、URL 安全校验、时间戳
@@ -1872,24 +2483,25 @@
     const ok = await uiConfirm("确定要清空当前内容吗？此操作不可撤销。");
     if (!ok) return;
     localStorage.removeItem(STORAGE_KEY);
-    editor.innerHTML = "";
+    if (textMode && sourceView && !(currentFile && currentFile.readOnly)) {
+      sourceView.value = "";
+      refreshDirtyMark();
+      sourceView.focus();
+    } else {
+      editor.innerHTML = "";
+    }
     history = [takeSnapshot()];
     historyIndex = 0;
     lastWasCommand = true;
     lastChangeTs = Date.now();
     updatePlaceholder();
-    editor.focus();
+    if (!textMode) editor.focus();
   }
 
   function scheduleAutosave() {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(function () {
-      try {
-        localStorage.setItem(STORAGE_KEY, editor.innerHTML);
-      } catch (err) {
-        console.warn("草稿保存失败：", err);
-      }
-    }, 500);
+    // 多标签下 localStorage 单槽草稿会互相覆盖（且重启只恢复文件路径、不恢复未保存内容），
+    // 故不再写入；未保存内容改由「关闭标签 / 关窗时在系统临时目录留副本」兜底。
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
   }
 
   /* =====================================================================
@@ -1913,18 +2525,27 @@
     const el = document.getElementById("status");
     if (!el) return;
     const enc = (encodingSelect && encodingSelect.value) || "自动";
-    const text = editor && editor.innerText ? editor.innerText : "";
+    const isText = !!(currentFile && currentFile.kind === "text");
+    // 纯文本模式下内容在源码栏，富文本编辑区是空的
+    const text = isText
+      ? (sourceView ? sourceView.value : "")
+      : (editor && editor.innerText ? editor.innerText : "");
     const chars = text.replace(/\s/g, "").length;
     const cjk = (text.match(/[一-鿿]/g) || []).length;
     const en = (text.match(/[A-Za-z0-9]+/g) || []).length;
     let pos = "";
     try {
-      const sel = window.getSelection();
-      if (sel && sel.anchorNode && editor.contains(sel.anchorNode) && typeof getCaretOffset === "function") {
-        pos = "　光标 " + (getCaretOffset() + 1);
+      if (isText && sourceView) {
+        pos = "　光标 " + (sourceView.selectionStart + 1);
+      } else {
+        const sel = window.getSelection();
+        if (sel && sel.anchorNode && editor.contains(sel.anchorNode) && typeof getCaretOffset === "function") {
+          pos = "　光标 " + (getCaretOffset() + 1);
+        }
       }
     } catch (e) {}
-    el.textContent = "字数 " + chars + "　编码 " + (enc || "自动") + pos;
+    const ro = (currentFile && currentFile.readOnly) ? "　只读" : "";
+    el.textContent = "字数 " + chars + "　编码 " + (enc || "自动") + ro + pos;
     el.classList.remove("status-error");
   }
   function scheduleStatus() {
@@ -2232,6 +2853,52 @@
     enterSplitMode();
     updatePlaceholder();
     updateToolbarState();
+  }
+
+  /* =====================================================================
+   * 纯文本模式（kind:"text"）
+   * ---------------------------------------------------------------------
+   * 纯文本不进 WYSIWYG：常驻全屏原文栏（复用 .editor-wrap.source 布局，以及
+   * sourceMode 现成的撤销栈 / 脏标记 / 查找 / 自动换行），保存时把
+   * sourceView.value 原样写回，不套 HTML 文档骨架。
+   * 未知后缀文本：经二进制嗅探通过后按 "text" 打开，可编辑、可写回原文件（不抢系统关联）。
+   * ===================================================================== */
+  function loadTextFile(res) {
+    if (splitMode) exitSplitMode();
+    // Rust 序列化为 snake_case（read_only），另存为重载时传的是 readOnly，两者都兼容
+    const ro = !!(res.readOnly || res.read_only);
+    editor.contentEditable = "false";
+    closeMdOutline();
+    if (editorWrap) editorWrap.classList.add("source");
+    toolbar.classList.add("text-mode");
+    editor.style.display = "none";
+    sourceView.style.display = "block";
+    sourceView.value = res.content;
+    sourceView.readOnly = ro;
+    sourceMode = true;
+    textMode = true;
+    sourceFind = null;
+    history = [takeSnapshot()];
+    historyIndex = 0;
+    lastWasCommand = true;
+    lastChangeTs = Date.now();
+    updatePlaceholder();
+    updateToolbarState();
+    sourceView.focus();
+    scheduleStatus();
+    setStatus(ro
+      ? "只读预览：该文件不可直接写回，可用「另存为」保存副本"
+      : "已打开文本文件，保存会保留原编码与换行");
+  }
+
+  /** 退出纯文本模式（切换到其它文档前调用） */
+  function exitTextMode() {
+    if (!textMode) return;
+    textMode = false;
+    toolbar.classList.remove("text-mode");
+    sourceView.readOnly = false;
+    // applySourceToEditor 对 text 是 no-op，这里借 exitSourceMode 清理显示状态与 sourceMode
+    exitSourceMode();
   }
 
   /** JSON 表格：双击叶子单元格进入编辑（严格保原类型） */
@@ -2610,6 +3277,8 @@
     const lower = path.toLowerCase();
     if (lower.endsWith(".md") || lower.endsWith(".markdown")) return "markdown";
     if (lower.endsWith(".svg")) return "svg";
+    if (lower.endsWith(".json")) return "json";
+    if (TEXT_EXT_RE.test(lower)) return "text";
     return "html";
   }
 
@@ -2619,21 +3288,28 @@
     let selected;
     try {
       selected = await tauriOpen({
-        multiple: false,
-        filters: [{ name: "HTML / Markdown / PDF / SVG / EPUB", extensions: ["html", "htm", "md", "markdown", "pdf", "svg", "epub"] }],
+        multiple: true,
+        filters: [
+          { name: "全部支持的文档", extensions: ["html", "htm", "md", "markdown", "json", "pdf", "svg", "epub"].concat(TEXT_EXTENSIONS) },
+          { name: "文本文件", extensions: TEXT_EXTENSIONS },
+          { name: "所有文件", extensions: ["*"] },
+        ],
       });
     } catch (e) {
       setStatus("打开失败：" + e, true);
       return;
     }
     if (!selected) return; // 用户取消
-    await openFileWithPath(selected);
+    // 多选：每个文件各开一个标签（同路径已打开则直接激活）
+    const list = Array.isArray(selected) ? selected : [selected];
+    for (let i = 0; i < list.length; i++) await openPathInTab(list[i]);
   }
 
   /** 按路径打开文件（供对话框与拖放共用）
    * @param {string} path 文件路径 */
-  async function openFileWithPath(path) {
-    if (!TAURI) { setStatus("当前环境不支持文件读取。", true); return; }
+  async function openFileWithPath(path, opts) {
+    opts = opts || {};
+    if (!TAURI) { setStatus("当前环境不支持文件读取。", true); return false; }
     const lower = path.toLowerCase();
     if (lower.endsWith(".pdf")) {
       if (window.__epubActive) exitEpub();   // 若当前在 EPUB 模式，先退出避免双视图叠加（epub-root 残留会压扁 PDF）
@@ -2642,7 +3318,7 @@
       currentFile = { path: path, kind: "pdf" };
       refreshSiblings();
       setFilePath(path, true);   // 与 EPUB 分支一致：入口处维护路径与「打开位置」按钮状态（pdf.js 内的 setFilePath 仍会再次同步）
-      return;
+      return true;
     }
     // EPUB：交给 EPUB 只读阅读视图，不走文本编辑器
     if (lower.endsWith(".epub")) {
@@ -2651,11 +3327,14 @@
       currentFile = { path: path, kind: "epub" };
       refreshSiblings();
       openEpub(path);
-      return;
+      return true;
     }
-    // 打开其它文档前，若正处于 PDF / EPUB 模式则先退出
+    // 打开其它文档前，先退出 PDF / EPUB / 纯文本模式
     if (window.__pdfActive && window.PDFApp) window.PDFApp.close();
     if (window.__epubActive) exitEpub();
+    if (textMode) exitTextMode();
+    else if (sourceMode) exitSourceMode();
+    else if (splitMode) exitSplitMode();
     editor.contentEditable = "true"; // SVG 模式会把 editor 置为只读，这里恢复可编辑
     let res;
     try {
@@ -2663,12 +3342,23 @@
       res = await tauriInvoke("open_file", { path, encoding: enc });
     } catch (e) {
       setStatus("打开失败：" + e, true);
-      return;
+      return false;
     }
-    if (sourceMode) exitSourceMode();
-    else if (splitMode) exitSplitMode();
-    currentFile = { path: res.path, kind: res.kind };
-    renderToolbar();   // 文档类型可能切换（md↔html），重算 htmlOnly 按钮显隐
+    // 保留原文件格式元数据，保存时原样回传（GBK 不被改 UTF-8、BOM 不丢、CRLF 不被吞）
+    currentFile = {
+      path: res.path,
+      kind: res.kind,
+      encoding: res.encoding || "utf-8",
+      bom: res.bom || "",
+      lineEnding: res.line_ending || res.lineEnding || "lf",
+      readOnly: !!(res.read_only || res.readOnly),
+    };
+    // 编码下拉回显「本文件实际编码」；只改显示不写配置，避免污染其它文件
+    if (encodingSelect) {
+      encodingSelect.value = currentFile.encoding || "";
+      updateEditorStatus();
+    }
+    renderToolbar();   // 文档类型可能切换（md↔html↔text），重算按钮显隐
     setFilePath(res.path, true);
     refreshSiblings();
     if (res.kind === "markdown") {
@@ -2680,11 +3370,30 @@
     } else if (res.kind === "svg") {
       loadSvg(res.content);
       savedSignature = res.content;           // SVG 源码即真相
+    } else if (res.kind === "text") {
+      loadTextFile(res);
+      savedSignature = res.content;           // 纯文本源码即真相（已归一为 LF，与 sourceView.value 同表示）
     } else {
       loadHtmlDocument(res.content);
       savedSignature = serializedEditorHtml(false);   // 归一化 innerHTML（还原本地图片原始 src，与 contentSignature 同表示）
     }
     refreshDirtyMark();   // 新文件载入完成 = 回到基线
+    // 全新加载：默认把视图定位到文档起始位置，避免继承上一个文档残留滚动位置
+    // （旧文档较短时浏览器会 clamp 到末尾 → 看起来“滚到底部”）。
+    // 会话恢复时若带 opts.scroll（上次离开前的滚动位置），则还原到原编辑位置。
+    const sc = opts.scroll;
+    if (sc) {
+      if (editorWrap) editorWrap.scrollTop = sc.wrap || 0;
+      if (editor) editor.scrollTop = sc.editor || 0;
+      if (sourceView) sourceView.scrollTop = sc.source || 0;
+      if (sourceHl) sourceHl.scrollTop = sc.sourceHl || 0;
+    } else {
+      if (editorWrap) editorWrap.scrollTop = 0;
+      if (editor) editor.scrollTop = 0;
+      if (sourceView) sourceView.scrollTop = 0;
+      if (sourceHl) sourceHl.scrollTop = 0;
+    }
+    return true;
   }
 
   /** 取路径所在的目录（兼容 / 与 \\） */
@@ -3094,7 +3803,7 @@
     if (!siblingFiles.length || siblingIndex < 0) return;
     const ni = siblingIndex + delta;
     if (ni < 0 || ni >= siblingFiles.length) return;
-    openFileWithPath(siblingFiles[ni]);
+    openPathInTab(siblingFiles[ni]);   // 上一个 / 下一个也各开一个标签，不覆盖当前文档
   }
 
   /** 根据当前导航状态启用 / 禁用两个按钮 */
@@ -3107,26 +3816,38 @@
     if (next) next.disabled = !(enabled && siblingIndex >= 0 && siblingIndex < siblingFiles.length - 1);
   }
 
+  /** 按类型序列化「当前文档」为可写盘文本；保存与「留临时副本」共用同一口径。 */
+  function serializeCurrentForSave(kind) {
+    if (kind === "markdown") return serializeMarkdown();
+    if (kind === "json" || kind === "svg" || kind === "text") return sourceView.value;
+    return buildFullDocument();
+  }
+
   /** 保存当前内容到指定路径（按类型决定序列化方式） */
   async function saveFileWithContent(path, kind) {
-    let content;
+    const content = serializeCurrentForSave(kind);
     if (kind === "markdown") {
-      content = serializeMarkdown();
       const loss = estimateMdTextLoss(editor.innerHTML, content);
       if (loss > 0.15) {
         showToast("⚠️ 保存的 MD 可能丢失约 " + Math.round(loss * 100) + "% 文本，建议另存备份核对");
         setStatus("⚠️ MD 往返可能丢失内容，已照常保存：" + path, true);
       }
-    } else if (kind === "json") {
-      content = sourceView.value; // JSON 源码即真相
-    } else if (kind === "svg") {
-      content = sourceView.value; // SVG 源码即真相
-    } else {
-      content = buildFullDocument();
     }
     try {
-      const enc = (getConfig().defaultEncoding || "") || undefined;
-      await tauriInvoke("save_file", { path, kind, content, encoding: enc });
+      // 编码优先用下拉当前值（用户可手动改），否则沿用打开时读到的实际编码
+      const enc = (encodingSelect && encodingSelect.value)
+        || (currentFile && currentFile.encoding)
+        || undefined;
+      // 格式元数据原样回传：BOM 与行尾由后端还原，保证 GBK/UTF-16/CRLF 保真
+      const meta = currentFile || {};
+      await tauriInvoke("save_file", {
+        path: path,
+        kind: kind,
+        content: content,
+        encoding: enc,
+        bom: meta.bom || undefined,
+        lineEnding: meta.lineEnding || undefined,
+      });
       setStatus("已保存：" + path);
       savedSignature = contentSignature();   // 关闭保护基线：以"刚落盘的内容"为准
       refreshDirtyMark();                    // 保存成功 = 回到基线，清除未保存标记
@@ -3147,6 +3868,11 @@
   async function saveFile() {
     // PDF 模式下，保存走 PDF 模块（写回旋转 / 备注）
     if (window.__pdfActive && window.PDFApp) { window.PDFApp.save(); return; }
+    // 未知后缀按文本只读预览：不可写回原文件，但「另存为」副本仍可用
+    if (currentFile && currentFile.readOnly) {
+      setStatus("只读预览不能写回原文件，请用「另存为」保存副本", true);
+      return;
+    }
     if (sourceMode) applySourceToEditor();
     // 仅当已有关联路径才写回；path 为 null（新建未保存的文档）走"另存为"。
     if (currentFile && currentFile.path) {
@@ -3170,6 +3896,8 @@
     const _allFilters = [
       { name: "Markdown", extensions: ["md"], k: "markdown" },
       { name: "HTML", extensions: ["html"], k: "html" },
+      { name: "JSON", extensions: ["json"], k: "json" },
+      { name: "纯文本", extensions: ["txt"], k: "text" },
       { name: "SVG", extensions: ["svg"], k: "svg" },
       { name: "PDF", extensions: ["pdf"], k: "pdf" },
     ].sort(function (a, b) { return (a.k === _curKind ? -1 : 1) - (b.k === _curKind ? -1 : 1); })
@@ -3190,6 +3918,8 @@
       const _ext = (currentFile && currentFile.kind === "markdown") ? ".md"
                  : (currentFile && currentFile.kind === "svg") ? ".svg"
                  : (currentFile && currentFile.kind === "html") ? ".html"
+                 : (currentFile && currentFile.kind === "json") ? ".json"
+                 : (currentFile && currentFile.kind === "text") ? ".txt"
                  : ".md";
       path += _ext;
     }
@@ -3209,8 +3939,18 @@
       return;
     }
     const prevKind = currentFile ? currentFile.kind : null;
-    currentFile = { path, kind };
-    renderToolbar();   // 另存为可能改类型（如草稿存成 html），重算 htmlOnly 按钮显隐
+    const prevMeta = currentFile || {};
+    // 另存为是「新文件」：编码 / BOM / 行尾沿用原文件（用户多半想保持格式），
+    // 但不再是只读预览（写到了自己选定的新路径，当然可编辑可保存）。
+    currentFile = {
+      path: path,
+      kind: kind,
+      encoding: prevMeta.encoding || "utf-8",
+      bom: prevMeta.bom || "",
+      lineEnding: prevMeta.lineEnding || "lf",
+      readOnly: false,
+    };
+    renderToolbar();   // 另存为可能改类型（如草稿存成 html），重算按钮显隐
     // 同步首屏路径指示与"打开位置"按钮（否则另存为之后仍显示"未打开文件"且按钮灰掉）
     setFilePath(path, true);
     const name = path.split(/[\\/]/).pop() || path;
@@ -3229,6 +3969,14 @@
     }
     // 标题放重载之后：loadMarkdown 会把标题重置回「墨笺」
     setDocTitle(name + " · 墨笺");
+    // 另存为改变了文件身份：同步标签名 / 路径 / 快照，并写进会话恢复列表
+    const at = activeTab();
+    if (at) {
+      at.path = path; at.kind = kind; at.title = baseName(path);
+      captureActiveTab();
+      renderTabs();
+      persistOpenTabs();
+    }
   }
 
   /** 跨格式另存后按新格式重载视图：等价于"重新打开刚存的文件"，但保留用户当前的
@@ -3243,11 +3991,14 @@
     } else if (kind === "svg") {
       loadSvg(content);        // 内部已进入分栏（左预览右源码）
       savedSignature = content;
+    } else if (kind === "text") {
+      loadTextFile({ content: content, readOnly: false });
+      savedSignature = content;
     } else {
       loadHtmlDocument(content);
       savedSignature = serializedEditorHtml(false);
     }
-    if (kind !== "svg") {
+    if (kind !== "svg" && kind !== "text") {
       if (wasSplit) enterSplitMode();
       else if (wasSource) enterSourceMode();
     }
@@ -3295,21 +4046,9 @@
     }, 120);
   }
 
-  /** 监听窗口拖放（Tauri dragDropEnabled + tauri://drag-drop 事件） */
-  /** 拖放落盘 → 多实例：每个拖入文件各占一个独立窗口。
-      当前窗口无文件时首个在本窗打开（避免留空窗），其余各开新实例；
-      当前窗口已有文件时全部开新实例，不打扰当前编辑内容。 */
-  function handleDroppedFiles(paths) {
-    /* 空白实例（无文件且无未保存内容）= 用户刚开的空窗口：
-     * 拖入的文档直接就地打开——多个文件时最后一个开在这里，其余各开新实例；
-     * 非空白窗口（已有文档或有未保存内容）不覆盖现状，全部开新实例。 */
-    const hasDoc = !!(currentFile && currentFile.path) || hasUnsavedChanges();
-    if (hasDoc) {
-      for (let i = 0; i < paths.length; i++) openInNewInstance(paths[i]);
-      return;
-    }
-    for (let i = 0; i < paths.length - 1; i++) openInNewInstance(paths[i]);
-    openFileWithPath(paths[paths.length - 1]);
+  /** 拖入多个文件：每个文件各开一个标签（同路径已开则直接激活），不覆盖当前编辑内容。 */
+  async function handleDroppedFiles(paths) {
+    for (let i = 0; i < paths.length; i++) await openPathInTab(paths[i]);
   }
 
   /** 在新窗口中打开文件（独立应用实例）。Rust 侧 open_new_instance 经
@@ -3362,6 +4101,8 @@
    * ===================================================================== */
   function applySourceToEditor() {
     if (!sourceMode) return;
+    // 纯文本模式：右侧原文即真相，绝不回填进富文本编辑器（否则会被包成 HTML 写回）
+    if (textMode || (currentFile && currentFile.kind === "text")) return;
     const src = sourceView.value;
     if (currentFile && currentFile.kind === "json") {
       try { currentJson = JSON.parse(src); jsonOk = true; renderJsonTable(); }
@@ -3393,6 +4134,7 @@
   }
 
   function enterSourceMode() {
+    if (textMode) return;   // 纯文本模式常驻全屏原文栏，无需 / 不允许再切换
     if (splitMode) exitSplitMode();
     if (sourceMode) return;
     let src;
@@ -3402,6 +4144,8 @@
       src = sourceView.value; // JSON 源码即真相
     } else if (currentFile && currentFile.kind === "svg") {
       src = sourceView.value; // SVG 下右侧源码才是真相，不要被渲染 DOM 覆盖
+    } else if (currentFile && currentFile.kind === "text") {
+      src = sourceView.value; // 纯文本源码即真相
     } else {
       src = serializedEditorHtml(false);
     }
@@ -3440,6 +4184,7 @@
 
   /** 进入分栏：左渲染区 + 右源码并排显示，双向防抖同步 */
   function enterSplitMode() {
+    if (textMode) return;   // 纯文本模式没有「左渲染」概念，禁止分栏
     if (splitMode) return;
     if (sourceMode) exitSourceMode();
     invalidateSplitMap(); // 重新进入分栏：块级映射按当前内容重建
@@ -3447,6 +4192,7 @@
     if (currentFile && currentFile.kind === "markdown") src = serializeMarkdown();
     else if (currentFile && currentFile.kind === "json") src = sourceView.value; // JSON 源码即真相
     else if (currentFile && currentFile.kind === "svg") src = sourceView.value;
+    else if (currentFile && currentFile.kind === "text") src = sourceView.value;
     else src = editor.innerHTML;
     sourceView.value = src;
     editor.style.display = "";
@@ -3473,11 +4219,13 @@
   }
 
   function toggleSplitMode() {
+    if (textMode) return;   // 纯文本模式常驻原文视图，分栏无意义
     if (splitMode) exitSplitMode();
     else enterSplitMode();
   }
 
   function toggleSourceMode() {
+    if (textMode) return;   // 纯文本模式常驻原文视图，按钮已隐藏，这里兜住快捷键/事件残留
     if (splitMode) { exitSplitMode(); enterSourceMode(); return; }
     if (sourceMode) exitSourceMode();
     else enterSourceMode();
@@ -3505,37 +4253,10 @@
   }
 
   async function confirmNewFile(kind) {
-    // 新建一律开新窗口实例：当前窗口内容原样保留，不再就地清空。
-    // Rust 侧 open_new_instance 收到 newKind 后注入 window.__NEW_KIND__，
-    // 新窗口 init 按空白文档启动（跳过 argv 文件关联，避免误读进程参数）。
-    if (TAURI_CORE) {
-      try {
-        await tauriInvoke("open_new_instance", { path: "", newKind: kind });
-        setStatus("已在新窗口新建" + (kind === "html" ? " HTML 文档" : " Markdown 文档"));
-      } catch (e) {
-        setStatus("新建窗口失败：" + e, true);
-      }
-      return;
-    }
-    // 无 Tauri（浏览器 / 无头测试环境）退回旧的就地清空行为
-    if (sourceMode) exitSourceMode();
-    editor.contentEditable = "true";
-    editor.innerHTML = "";
-    currentFile = { path: null, kind: kind };
-    renderToolbar();   // md↔html 新建切换，重算 htmlOnly 按钮显隐
-    loadedHead = "";
-    loadedTitle = "";
-    setDocTitle("墨笺");
-    savedSignature = contentSignature();   // 草稿基线：从空白开始计算未保存修改
-    history = [takeSnapshot()];
-    historyIndex = 0;
-    lastWasCommand = true;
-    lastChangeTs = Date.now();
-    updatePlaceholder();
-    updateToolbarState();
-    scheduleAutosave();
-    setFilePath("", false);
-    setStatus(kind === "markdown" ? "已新建 Markdown 文档" : "已新建 HTML 文档");
+    // 多标签：新建不再开新窗口，在当前窗口加一个空白标签；
+    // 「在新窗口打开」仍由标签右键菜单提供。
+    await newBlankTab(kind === "html" ? "html" : "markdown");
+    setStatus(kind === "html" ? "已新建 HTML 标签" : "已新建 Markdown 标签");
   }
 
   /* =====================================================================
@@ -3590,6 +4311,7 @@
     if (!currentFile || window.__pdfActive || window.__epubActive) return null;
     if (currentFile.kind === "svg") return sourceView.value;   // SVG 源码即真相
     if (currentFile.kind === "json") return sourceView.value;  // JSON 源码即真相
+    if (currentFile.kind === "text") return sourceView.value;  // 纯文本源码即真相
     if (sourceMode) return sourceView.value;                    // 源码模式下右侧是唯一真相
     if (currentFile.kind === "markdown") return serializeMarkdown();
     return serializedEditorHtml(false);
@@ -3604,14 +4326,23 @@
 
   /** 注册关窗拦截：无修改直接放行（不 preventDefault 即默认关闭）；
    *  有修改则弹确认框。注册失败（旧运行时）时静默退化为系统默认行为。 */
+  /** 全部标签里仍带未保存修改的（先采集当前标签，其余标签的基线在各自快照里）。 */
+  function dirtyTabsNow() {
+    captureActiveTab();
+    return tabs.filter(function (t) { return !!t.dirty; });
+  }
+
   function setupCloseGuard() {
     const win = currentWindow();
     if (!win || !win.onCloseRequested) return;
     try {
       win.onCloseRequested(async function (event) {
-        if (!hasUnsavedChanges()) return;
+        const dirty = dirtyTabsNow();
+        if (!dirty.length) return;
         event.preventDefault();
         const cd = document.getElementById("close-dialog");
+        const desc = document.getElementById("close-desc");
+        if (desc) desc.textContent = "有 " + dirty.length + " 个文件的修改还没保存。不保存会在临时目录为每个文件留一份副本。";
         if (cd) openModal(cd);
       });
     } catch (e) {}
@@ -3630,18 +4361,22 @@
     const cdx = document.getElementById("close-discard");
     const cs = document.getElementById("close-save");
     if (cc) cc.addEventListener("click", function () { closeModal(closeDialog); });
-    if (cdx) cdx.addEventListener("click", function () {
+    if (cdx) cdx.addEventListener("click", async function () {
+      // 直接关闭：给每个未保存的文本标签在系统临时目录留一份副本（PDF/EPUB 无文本副本）
+      const list = dirtyTabsNow();
+      for (let i = 0; i < list.length; i++) await backupTab(list[i]);
       closeModal(closeDialog);
       destroyCurrentWindow();
     });
     if (cs) cs.addEventListener("click", async function () {
-      // 保存并关闭：写回成功（签名一致）才真正关窗；另存对话框被取消则留在编辑器
-      if (currentFile && currentFile.path) await saveFile();
-      else await saveFileAs();
-      if (!hasUnsavedChanges()) {
-        closeModal(closeDialog);
-        destroyCurrentWindow();
+      const list = dirtyTabsNow();
+      for (let i = 0; i < list.length; i++) {
+        await activateTab(list[i].id, { force: true });
+        await saveFile();
       }
+      const left = dirtyTabsNow();
+      if (!left.length) { closeModal(closeDialog); destroyCurrentWindow(); }
+      else { closeModal(closeDialog); setStatus("还有 " + left.length + " 个文件未保存，未能关闭", true); }
     });
     closeDialog.addEventListener("click", function (e) { if (e.target === closeDialog) closeModal(closeDialog); });
   }
@@ -3717,7 +4452,8 @@
     else if (ae === editor || (editor && editor.contains(ae))) lastFindSide = "editor";
     if (findBar) {
       // 顶部浮动：精确贴在工具栏底边下方（工具栏高度随换行/主题变化，按真实位置算）
-      const tb = document.getElementById("toolbar");
+      // 标签栏在工具栏下方：浮条须贴在标签栏底边，否则会盖住标签
+      const tb = document.getElementById("tab-bar") || document.getElementById("toolbar");
       if (tb) {
         const top = tb.getBoundingClientRect().bottom + 6;
         findBar.style.top = top + "px";
@@ -3959,8 +4695,10 @@
   toolbar.addEventListener("click", function (e) {
     const btn = e.target.closest("button");
     if (!btn) return;
-    // 纯源码视图下仅允许 keep 类控件（缩放/分栏/源码）；撤销/重做例外——作用于源码栏
-    if (sourceMode && !btn.classList.contains("keep")) {
+    // 纯源码视图下仅允许 keep 类控件（缩放/分栏/源码）；撤销/重做例外——作用于源码栏。
+    // 纯文本模式常驻源码栏（sourceMode=true），但按钮已由 TEXT_ALLOWED 白名单收窄，
+    // 不能再走这道拦截，否则新建/打开/保存/另存为/查找全都点不动。
+    if (sourceMode && !textMode && !btn.classList.contains("keep")) {
       const a = btn.dataset.action;
       if (a === "undo" || a === "redo") { /* 放行，交由下方 undo()/redo() 处理 */ }
       else return;
@@ -4075,6 +4813,7 @@
       sourceView.value = (currentFile && currentFile.kind === "markdown")
         ? serializeMarkdown()
         : (currentFile && currentFile.kind === "svg") ? sourceView.value
+        : (currentFile && currentFile.kind === "text") ? sourceView.value
         : editor.innerHTML;
       sourceView.scrollTop = keepTop;
       setTimeout(function () { suppressSourceInput = false; }, 0);
@@ -4098,6 +4837,8 @@
         // 分栏右侧（JSON 原文）编辑 → 防抖回填：parse 成功则重渲染表格，失败保留上次有效内容
         try { currentJson = JSON.parse(src); jsonOk = true; renderJsonTable(); }
         catch (e) { setStatus("JSON 暂有语法错误，左侧保留上次有效内容", true); }
+      } else if (currentFile && currentFile.kind === "text") {
+        // 纯文本常驻原文栏，右侧即真相，不回填左渲染区（分栏本身已被 textMode 挡住）
       } else {
         editor.innerHTML = sanitizeHtmlString(src);
         history = [takeSnapshot()];
@@ -4458,6 +5199,8 @@
     const mod = e.ctrlKey || e.metaKey;
     if (!mod) return;
     const key = e.key.toLowerCase();
+    // 纯文本模式下 Ctrl+B/I/U 不该触发富文本格式化（按钮已隐藏，这里兜住快捷键）
+    if (textMode && (key === "b" || key === "i" || key === "u")) return;
     if (key === "b") {
       e.preventDefault();
       formatCommand("bold");
@@ -4556,38 +5299,36 @@
       const z = parseFloat(localStorage.getItem("editorZoom"));
       if (!isNaN(z) && z >= 0.5 && z <= 2) applyZoom(z, false);
     } catch (e) {}
-    // 恢复上次源码分栏
-    if (appConfig.sourceSplit) enterSplitMode();
-    // 处理启动文件来源（优先级：多实例「新建」注入 > 多实例打开注入 > 命令行参数）：
-    // ① 多实例「新建」：Rust open_new_instance(path, newKind) 注入 window.__NEW_KIND__，
-    //    本窗口按空白文档启动；必须最先检查，否则会误读进程级 argv；
-    // ② 多实例打开：Rust open_new_instance 经 initialization_script 注入 window.__OPEN_PATH__；
-    // ③ 文件关联：Windows 双击 .md/.html 时路径作为命令行参数传入，
-    //    Tauri 不会自动打开，这里主动读取并在启动后加载该文件。
+    // 多标签下视图模式按标签独立保存与恢复，不再用全局 sourceSplit 默认值强制首标签分栏。
+    // 会话恢复：按上次保存的路径列表逐个重开标签（未保存内容不恢复，由临时副本兜底）。
+    // 兼容旧版纯字符串数组与新三件套 { path, scroll }；scroll 为上次离开前的滚动位置。
+    const savedRaw = Array.isArray(appConfig.openTabs) ? appConfig.openTabs : [];
+    for (let i = 0; i < savedRaw.length; i++) {
+      const e = savedRaw[i];
+      if (!e) continue;
+      const p = (typeof e === "string") ? e : (e.path || "");
+      if (!p) continue;
+      const sc = (typeof e === "object" && e.scroll) ? e.scroll : null;
+      try { await openPathInTab(p, { scroll: sc }); } catch (e2) {}
+    }
+    // 启动文件来源（优先级：多实例「新建」注入 > 多实例打开注入 > 命令行参数）；
+    // 与会话恢复去重：同路径只激活，不重复开标签。
     if (window.__NEW_KIND__) {
       const nk = window.__NEW_KIND__ === "html" ? "html" : "markdown";
-      currentFile = { path: null, kind: nk };
-      savedSignature = contentSignature();   // 草稿基线：空白起点
-      renderToolbar();   // 新建可能是 html，重算 htmlOnly 按钮显隐
+      await newBlankTab(nk);
       setStatus(nk === "html" ? "已新建 HTML 文档" : "已新建 Markdown 文档");
     } else if (window.__OPEN_PATH__) {
-      openFileWithPath(window.__OPEN_PATH__);
+      await openPathInTab(window.__OPEN_PATH__);
     } else {
       try {
         const initialFile = await tauriInvoke("get_initial_file");
-        if (initialFile) {
-          openFileWithPath(initialFile);
-        } else {
-          // 仅在无文件关联传入时提示「新建」；有启动文件（如双击 PDF）时不提示，
-          // 避免打开 PDF/HTML 前先弹出误导性的「已新建 Markdown 文档」
-          // 空白实例 = 未命名 Markdown 草稿（currentFile.path 为 null），
-          // 打字即产生未保存修改（脏标记 / 关窗保护对草稿同样生效）
-          currentFile = { path: null, kind: "markdown" };
-          savedSignature = contentSignature();
-          setStatus("已新建 Markdown 文档");
-        }
+        if (initialFile) await openPathInTab(initialFile);
       } catch (e) {}
     }
+    // 一个标签都没有（干净安装 / 恢复路径全部失效）→ 空白 Markdown 起手
+    if (!tabs.length) await newBlankTab("markdown");
+    renderTabs();
+    persistOpenTabs();
   }
 
   init();
