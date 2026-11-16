@@ -22,6 +22,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         <span>定制</span>
       </button>
+      <button type="button" id="tab-fav" class="header-btn" data-tip="打开收藏夹" aria-label="打开收藏夹">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        <span>收藏</span>
+      </button>
       <select id="theme-select" class="header-select" title="切换主题">
         <option value="light">浅色</option>
         <option value="sepia">豆沙绿</option>
@@ -58,12 +62,22 @@
 
   <!-- 标签右键菜单 -->
   <div class="tab-menu hidden" id="tab-menu">
+    <button type="button" data-tab-menu="fav" id="tab-menu-fav">收藏此标签</button>
+    <button type="button" data-tab-menu="moveleft" id="tab-menu-moveleft">前移一位</button>
+    <button type="button" data-tab-menu="moveright" id="tab-menu-moveright">后移一位</button>
+    <div class="tab-menu-sep"></div>
     <button type="button" data-tab-menu="newwin">在新窗口打开</button>
     <button type="button" data-tab-menu="close">关闭标签</button>
     <button type="button" data-tab-menu="closeothers">关闭其他</button>
     <button type="button" data-tab-menu="closeall">关闭全部</button>
     <button type="button" data-tab-menu="copypath">复制路径</button>
     <button type="button" data-tab-menu="reveal">打开文件位置</button>
+  </div>
+
+  <!-- 收藏夹下拉（列出已收藏文件，点击重开，右侧移除） -->
+  <div class="fav-menu hidden" id="fav-menu">
+    <div class="fav-menu-head"><span>收藏的文件</span><button type="button" id="fav-menu-close" aria-label="关闭收藏夹">✕</button></div>
+    <div class="fav-menu-list" id="fav-menu-list"></div>
   </div>
 
   <!-- ============================ 编辑区 ============================ -->

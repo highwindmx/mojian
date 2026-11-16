@@ -48,6 +48,7 @@
     sourceSplit: false,    // 源码分栏模式（左渲染右源码）
     toolbarVisible: true,
     openTabs: [],          // 上次会话打开的文件（重启后按路径重开；每项 { path, scroll }，scroll 记忆滚动位置；旧版纯字符串数组仍兼容）
+    favorites: [],         // 收藏的标签文件（便于重新打开）；每项 { path, title, kind }，按收藏先后排列
   };
   let appConfig = Object.assign({}, DEFAULT_CONFIG);
 
@@ -738,6 +739,9 @@
   const tabBar = document.getElementById("tab-bar");
   const tabList = document.getElementById("tab-list");
   const tabNewBtn = document.getElementById("tab-new");
+  const tabFavBtn = document.getElementById("tab-fav");
+  const tabFavMenuEl = document.getElementById("fav-menu");
+  const tabFavListEl = document.getElementById("fav-menu-list");
   const tabMenuEl = document.getElementById("tab-menu");
   const tabCloseDialog = document.getElementById("tab-close-dialog");
   let tabs = [];
@@ -746,6 +750,100 @@
   let tabsPersistTimer = null;
   let tabMenuTabId = null;
   let tabChoiceResolver = null;
+
+  /* ---------- 收藏夹：持久化在 appConfig.favorites（{path,title,kind}[]） ---------- */
+  function favorites() {
+    return Array.isArray(appConfig.favorites) ? appConfig.favorites : [];
+  }
+  function isFavorited(path) {
+    if (!path) return false;
+    return favorites().some(function (f) { return f && f.path === path; });
+  }
+  async function setFavorites(list) {
+    await saveConfig({ favorites: list });
+  }
+  /** 收藏 / 取消收藏某个标签（按 path 去重）。无路径的未命名标签不可收藏。 */
+  async function toggleFavorite(t) {
+    if (!t || !t.path) { setStatus("未保存的标签无法收藏", true); return; }
+    const list = favorites().slice();
+    const i = list.findIndex(function (f) { return f && f.path === t.path; });
+    if (i >= 0) {
+      list.splice(i, 1);
+      setStatus("已取消收藏：" + t.title);
+      showToast("已取消收藏");
+    } else {
+      list.push({ path: t.path, title: t.title || baseName(t.path), kind: t.kind });
+      setStatus("已收藏：" + t.title);
+      showToast("已收藏，可在标签栏 ☆ 中重新打开");
+    }
+    await setFavorites(list);
+    renderTabs();
+  }
+  /** 渲染收藏夹下拉列表：点条目在新标签打开，点右侧 ✕ 移除收藏。 */
+  function renderFavMenu() {
+    if (!tabFavListEl) return;
+    tabFavListEl.innerHTML = "";
+    const list = favorites();
+    if (!list.length) {
+      const empty = document.createElement("div");
+      empty.className = "fav-empty";
+      empty.textContent = "还没有收藏。右键标签 → 收藏此标签，之后可在这里快速重新打开。";
+      tabFavListEl.appendChild(empty);
+      return;
+    }
+    list.forEach(function (f) {
+      if (!f || !f.path) return;
+      const row = document.createElement("div");
+      row.className = "fav-item";
+      const open = document.createElement("button");
+      open.type = "button";
+      open.className = "open";
+      open.dataset.favOpen = f.path;
+      open.dataset.tip = f.path;
+      open.setAttribute("aria-label", "打开收藏 " + (f.title || baseName(f.path)));
+      const ico = document.createElement("span");
+      ico.className = "fav-ico";
+      ico.textContent = "★";
+      const name = document.createElement("span");
+      name.className = "fav-name";
+      name.textContent = f.title || baseName(f.path);
+      open.appendChild(ico); open.appendChild(name);
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "del";
+      del.dataset.favDel = f.path;
+      del.textContent = "✕";
+      del.dataset.tip = "移除收藏";
+      del.setAttribute("aria-label", "移除收藏 " + (f.title || baseName(f.path)));
+      row.appendChild(open); row.appendChild(del);
+      tabFavListEl.appendChild(row);
+    });
+  }
+  function hideFavMenu() { if (tabFavMenuEl) tabFavMenuEl.classList.add("hidden"); }
+  function openFavMenu() {
+    if (!tabFavMenuEl || !tabFavBtn) return;
+    renderFavMenu();
+    tabFavMenuEl.classList.remove("hidden");
+    const r = tabFavBtn.getBoundingClientRect();
+    const mw = tabFavMenuEl.offsetWidth || 260;
+    tabFavMenuEl.style.left = Math.max(0, Math.min(r.right - mw, window.innerWidth - mw - 4)) + "px";
+    tabFavMenuEl.style.top = (r.bottom + 4) + "px";
+  }
+  /** 标签换位：delta=-1 前移一位，delta=+1 后移一位。数组顺序即渲染与持久化顺序。 */
+  function moveTab(id, delta) {
+    const i = tabs.findIndex(function (t) { return t.id === id; });
+    if (i < 0) return;
+    const j = i + delta;
+    if (j < 0 || j >= tabs.length) return;
+    const cur = activeTabId;
+    const moved = tabs.splice(i, 1)[0];
+    tabs.splice(j, 0, moved);
+    renderTabs();
+    persistOpenTabs();
+    // 被移动的标签若正在编辑，滚动条跟随其 DOM 位置由浏览器保持，无需额外处理
+    if (cur) { const el = tabList.querySelector('[data-tab-id="' + cur + '"]'); if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest", inline: "nearest" }); }
+  }
+
 
   function activeTab() { return tabs.find(function (t) { return t.id === activeTabId; }) || null; }
   function isViewerKind(k) { return k === "pdf" || k === "epub"; }
@@ -1000,6 +1098,13 @@
       el.setAttribute("aria-selected", t.id === activeTabId ? "true" : "false");
       el.dataset.tip = t.path || t.title;
       el.setAttribute("aria-label", t.title);
+      if (t.path && isFavorited(t.path)) {
+        const star = document.createElement("span");
+        star.className = "tab-star";
+        star.textContent = "★";
+        star.dataset.tip = "已收藏";
+        el.appendChild(star);
+      }
       const label = document.createElement("span");
       label.className = "tab-label";
       label.textContent = t.title;
@@ -1231,9 +1336,20 @@
   function hideTabMenu() { if (tabMenuEl) tabMenuEl.classList.add("hidden"); }
   function openTabMenu(x, y) {
     if (!tabMenuEl) return;
+    const t = tabs.find(function (x) { return x.id === tabMenuTabId; });
+    const i = t ? tabs.indexOf(t) : -1;
+    const favItem = document.getElementById("tab-menu-fav");
+    const ml = document.getElementById("tab-menu-moveleft");
+    const mr = document.getElementById("tab-menu-moveright");
+    if (favItem) {
+      favItem.textContent = (t && isFavorited(t.path)) ? "取消收藏" : "收藏此标签";
+      favItem.disabled = !(t && t.path);   // 未命名标签无路径可存，不可收藏
+    }
+    if (ml) ml.disabled = i <= 0;
+    if (mr) mr.disabled = i < 0 || i >= tabs.length - 1;
     tabMenuEl.classList.remove("hidden");
     tabMenuEl.style.left = Math.max(0, Math.min(x, window.innerWidth - 170)) + "px";
-    tabMenuEl.style.top = Math.max(0, Math.min(y, window.innerHeight - 220)) + "px";
+    tabMenuEl.style.top = Math.max(0, Math.min(y, window.innerHeight - 260)) + "px";
   }
   if (tabList) {
     tabList.addEventListener("click", function (e) {
@@ -1266,8 +1382,33 @@
     });
   }
   if (tabNewBtn) tabNewBtn.addEventListener("click", function () { openNewDialog(); });
+  if (tabFavBtn) tabFavBtn.addEventListener("click", function (e) {
+    e.stopPropagation();
+    hideTabMenu();
+    if (tabFavMenuEl && !tabFavMenuEl.classList.contains("hidden")) { hideFavMenu(); return; }
+    openFavMenu();
+  });
+  if (tabFavMenuEl) {
+    const fc = document.getElementById("fav-menu-close");
+    if (fc) fc.addEventListener("click", function (e) { e.stopPropagation(); hideFavMenu(); });
+    tabFavMenuEl.addEventListener("click", async function (e) {
+      e.stopPropagation();
+      const del = e.target.closest("[data-fav-del]");
+      if (del) {
+        const list = favorites().filter(function (f) { return !f || f.path !== del.dataset.favDel; });
+        await setFavorites(list);
+        renderFavMenu();
+        renderTabs();
+        showToast("已移除收藏");
+        return;
+      }
+      const op = e.target.closest("[data-fav-open]");
+      if (op) { hideFavMenu(); await openPathInTab(op.dataset.favOpen); }
+    });
+  }
   document.addEventListener("click", function (e) {
     if (tabMenuEl && !tabMenuEl.contains(e.target)) hideTabMenu();
+    if (tabFavMenuEl && !tabFavMenuEl.contains(e.target) && (!tabFavBtn || !tabFavBtn.contains(e.target))) hideFavMenu();
   });
   if (tabMenuEl) {
     tabMenuEl.addEventListener("click", async function (e) {
@@ -1277,7 +1418,10 @@
       hideTabMenu();
       if (!t) return;
       const act = b.dataset.tabMenu;
-      if (act === "newwin") { if (t.path) openInNewInstance(t.path); }
+      if (act === "fav") await toggleFavorite(t);
+      else if (act === "moveleft") moveTab(t.id, -1);
+      else if (act === "moveright") moveTab(t.id, 1);
+      else if (act === "newwin") { if (t.path) openInNewInstance(t.path); }
       else if (act === "close") await closeTab(t.id);
       else if (act === "closeothers") {
         for (const x of tabs.slice()) if (x.id !== t.id) await closeTab(x.id);
@@ -3338,7 +3482,9 @@
     editor.contentEditable = "true"; // SVG 模式会把 editor 置为只读，这里恢复可编辑
     let res;
     try {
-      const enc = (getConfig().defaultEncoding || "") || undefined;
+      // 编码优先级：显式传入（编码下拉切换时用用户新选的值，空串=自动）> 配置文件默认值。
+      // 必须区分「没传」与「传了空串」，否则选「自动」会被配置里的旧值覆盖。
+      const enc = (opts.encoding !== undefined ? opts.encoding : (getConfig().defaultEncoding || "")) || undefined;
       res = await tauriInvoke("open_file", { path, encoding: enc });
     } catch (e) {
       setStatus("打开失败：" + e, true);
@@ -4401,10 +4547,63 @@
   const encodingSelect = document.getElementById("encoding-select");
   if (encodingSelect) {
     encodingSelect.value = appConfig.defaultEncoding || "";
-    encodingSelect.addEventListener("change", function () {
-      saveConfig({ defaultEncoding: encodingSelect.value });
+    encodingSelect.addEventListener("change", function () { onEncodingChanged(); });
+  }
+
+  /** 编码下拉切换：用新编码重新读取「当前标签」的磁盘文件并覆盖当前内容。
+   *  - 未命名标签 / PDF / EPUB：无文本可重读，仅把选择存为下次打开的默认编码；
+   *  - 有未保存修改：先弹确认，取消则把下拉回退到文件原编码，绝不静默丢失编辑；
+   *  - 重读成功：保留当前标签、滚动位置与视图模式，回写 encoding / bom / 行尾元数据。 */
+  async function onEncodingChanged() {
+    const chosen = encodingSelect.value;   // "" = 自动（后端嗅探）
+    saveConfig({ defaultEncoding: chosen });
+    updateEditorStatus();
+    const t = activeTab();
+    const path = (t && t.path) || (currentFile && currentFile.path);
+    if (!path || isViewerKind(currentFile && currentFile.kind)) return;   // 未命名 / PDF / EPUB 无文本可重读
+
+    // 有未保存修改时先确认，避免切换编码把编辑冲掉
+    const dirty = (t && t.dirty) || hasUnsavedChanges();
+    if (dirty) {
+      const choice = await askTabChoice(
+        "切换编码会用新编码重新读取磁盘文件，当前未保存的修改会丢失。",
+        { saveLabel: "先保存再切换", discardLabel: "不保存，重新读取" }
+      );
+      if (choice === "cancel") {
+        if (encodingSelect && currentFile) encodingSelect.value = currentFile.encoding || "";
+        updateEditorStatus();
+        return;
+      }
+      if (choice === "save") {
+        await saveFile();
+        if (hasUnsavedChanges()) { setStatus("保存未完成，已取消切换编码", true); return; }
+      }
+    }
+
+    // 记录当前滚动位置，重读后还原到原处（切换编码是「重看同一文件」，不是打开新文档）
+    const sc = {
+      wrap: editorWrap ? editorWrap.scrollTop : 0,
+      editor: editor ? editor.scrollTop : 0,
+      source: sourceView ? sourceView.scrollTop : 0,
+      sourceHl: sourceHl ? sourceHl.scrollTop : 0,
+    };
+    flushTabTimers();
+    let ok = false;
+    try { ok = await openFileWithPath(path, { scroll: sc, encoding: chosen }); }
+    catch (e) { ok = false; }
+    if (ok) {
+      if (t) {
+        captureActiveTab();
+        renderTabs();
+        persistOpenTabs();
+      }
+      setStatus("已用「" + (chosen || "自动") + "」重新读取文件");
+      showToast("已用新编码重新打开");
+    } else {
+      // 重读失败（如二进制嗅探拒绝）→ 下拉回退到文件原编码
+      if (encodingSelect && currentFile) encodingSelect.value = currentFile.encoding || "";
       updateEditorStatus();
-    });
+    }
   }
 
   /* 编码选框只对文本类文档有意义：PDF / EPUB 模式下连同「编码」标签一起隐藏。

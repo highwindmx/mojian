@@ -207,6 +207,21 @@
     background: #dc2626;
   }
 
+  /* ===== 浮层层级规范（z-index scale）—— 调整任何浮层层级前先读 =====
+     根层 stacking context（body 直接子元素）由低到高：
+       4     .tab-bar                 标签栏：必须低于 .toolbar，否则压住工具栏弹出的下拉
+       5     .toolbar / .pdf-toolbar  主 / PDF 工具栏（position:sticky 会建立 stacking context；
+                                      内部下拉如 .pdf-group-menu 被困在本层，跳不出去，
+                                      故需盖住标签栏时 tab-bar 必须更低，而不是把子菜单 z 调更高）
+       50    .modal / .pdf-loading    模态框 / PDF 加载遮罩
+       55    .find-bar                查找浮条
+       60    .toast / .tb-dropdown / .pdf-sig-menu / .anno-bar
+       70    .tab-menu / .pdf-note-popup
+       1000  .reveal-overlay          幻灯片放映
+       2147483600 .mtip              tooltip，永远最上
+     规则：工具栏弹出的下拉要么挂 body 根层用 fixed（如 .tb-dropdown，z60），
+       要么保持 tab-bar 低于 toolbar（4 < 5）——绝不能靠调高困在 context 内的子菜单 z 值。
+  */
   /* ============================ 标签栏（工具栏与编辑区之间） ============================ */
   .tab-bar {
     display: flex;
@@ -218,7 +233,7 @@
     background: var(--color-bg);
     border-bottom: 1px solid var(--color-border);
     position: relative;
-    z-index: 6;
+    z-index: 4;   /* 必须低于 .toolbar(5)：让 PDF 导出/另存为等工具栏下拉能盖过标签栏 */
     user-select: none;
   }
   .tab-list {
@@ -333,6 +348,85 @@
   }
   .tab-menu button:hover { background: var(--color-bg); }
   .tab-menu button:disabled { opacity: 0.45; }
+  .tab-menu-sep { height: 1px; margin: 4px 2px; background: var(--color-border); }
+
+  /* 标签上的收藏星标（已收藏标签显示） */
+  .tab-star {
+    flex: 0 0 auto;
+    color: #d97706;   /* 琥珀色，与脏点同色系 */
+    font-size: 11px;
+    line-height: 1;
+  }
+
+  /* 收藏夹下拉：挂 body 根层、fixed 定位，z70 与右键菜单同层。
+     触发按钮是顶栏「收藏」（header-btn），下拉按按钮位置在 openFavMenu() 里定位。 */
+  .fav-menu {
+    position: fixed;
+    z-index: 70;
+    width: 260px;
+    padding: 4px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+  }
+  .fav-menu-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 8px 7px;
+    color: var(--color-muted);
+    font-size: 12px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .fav-menu-head button {
+    border: 0;
+    background: transparent;
+    color: var(--color-muted);
+    font-size: 12px;
+    cursor: default;
+    padding: 0 2px;
+  }
+  .fav-menu-head button:hover { color: var(--color-text); }
+  .fav-menu-list { max-height: 320px; overflow-y: auto; padding-top: 4px; }
+  .fav-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 5px;
+  }
+  .fav-item:hover { background: var(--color-bg); }
+  .fav-item.open {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border: 0;
+    background: transparent;
+    color: var(--color-text);
+    font-size: 12px;
+    text-align: left;
+    cursor: default;
+  }
+  .fav-item .fav-ico { color: #d97706; flex: 0 0 auto; }
+  .fav-item .fav-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fav-item.del {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    margin-right: 2px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-muted);
+    font-size: 11px;
+    cursor: default;
+  }
+  .fav-item.del:hover { background: var(--color-border); color: var(--color-text); }
+  .fav-empty { padding: 12px 8px; color: var(--color-muted); font-size: 12px; line-height: 1.6; }
 
   /* ============================ 工具栏 ============================ */
   .toolbar {

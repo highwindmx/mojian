@@ -123,8 +123,18 @@ function buildPage(mode) {
         if (cmd === "read_config") return Promise.resolve(CONFIG);
         if (cmd === "write_config") { window.__CONFIGS__.push(args.content); return Promise.resolve(null); }
         if (cmd === "open_file") {
+          window.__OPEN_ENCS__ = window.__OPEN_ENCS__ || [];
+          window.__OPEN_ENCS__.push({ path: args.path, encoding: args.encoding || "" });
           var f = FILES[args.path];
-          return f ? Promise.resolve(f) : Promise.reject(new Error("no such file: " + args.path));
+          if (!f) return Promise.reject(new Error("no such file: " + args.path));
+          // 编码场景：按请求的编码返回不同文本，验证切换编码确实重新读取并改写了内容
+          if (window.MODE === "encoding" && f.kind === "text" && args.encoding) {
+            var r = Object.assign({}, f);
+            r.content = args.encoding === "gbk" ? ("GBK解码结果\\n" + Array(40).join("行内容\\n")) : ("UTF8解码结果\\n" + Array(40).join("行内容\\n"));
+            r.encoding = args.encoding;
+            return Promise.resolve(r);
+          }
+          return Promise.resolve(f);
         }
         if (cmd === "save_file") { window.__SAVES__.push(args); return Promise.resolve(null); }
         if (cmd === "save_unsaved_backup") {
@@ -212,6 +222,7 @@ ${mode === "pdf" ? PDF_STUB : ""}
   }
 
   setTimeout(async function () {
+    document.documentElement.setAttribute("data-phase", "callback-start:" + MODE);
     R.layoutOk = layoutOk();
     R.errors = [];
     snap("initial", { backups: window.__BACKUPS__.length });
@@ -258,6 +269,170 @@ ${mode === "pdf" ? PDF_STUB : ""}
         noJsErrors: (window.__PAGE_ERRORS__ || []).length === 0
       };
       document.documentElement.setAttribute("data-diag", JSON.stringify(R));
+      return;
+    }
+
+    if (MODE === "fav") {
+      function ctx(i) {
+        var el = tabEls()[i];
+        if (!el) return;
+        el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 120, clientY: 160 }));
+      }
+      function mi(act) { return document.querySelector('[data-tab-menu="' + act + '"]'); }
+      function menuState() {
+        var f = mi("fav"), ml = mi("moveleft"), mr = mi("moveright");
+        return {
+          hidden: $("tab-menu").classList.contains("hidden"),
+          favText: f ? f.textContent : null, favDisabled: f ? f.disabled : null,
+          mlDisabled: ml ? ml.disabled : null, mrDisabled: mr ? mr.disabled : null
+        };
+      }
+      function favs() {
+        var out = [];
+        window.__CONFIGS__.forEach(function (c) {
+          try { var o = JSON.parse(c); if (Array.isArray(o.favorites)) out = o.favorites; } catch (e) {}
+        });
+        return out;
+      }
+      function savedOrder() {
+        var out = [];
+        window.__CONFIGS__.forEach(function (c) {
+          try {
+            var o = JSON.parse(c);
+            if (Array.isArray(o.openTabs)) out = o.openTabs.map(function (x) { return typeof x === "string" ? x : x.path; });
+          } catch (e) {}
+        });
+        return out;
+      }
+      function order() { return tabEls().map(function (el) { return (el.querySelector(".tab-label") || {}).textContent; }); }
+      var F = { steps: [] };
+
+      // 1) 右键第一个标签（甲）：收藏文案、左移禁用、右移可用
+      ctx(0); await wait(80);
+      F.firstMenu = menuState();
+      // 2) 点「收藏此标签」→ 配置写入 + 星标出现
+      mi("fav").click(); await wait(180);
+      F.afterFav = { favs: favs(), starCount: document.querySelectorAll('#tab-list .tab-star').length };
+      // 3) 右键最后一个标签（丙）：右移应禁用
+      ctx(2); await wait(80);
+      F.lastMenu = menuState();
+      // 4) 丙前移一位 → 顺序变 甲/丙/乙（持久化 debounce 300ms，等足）
+      mi("moveleft").click(); await wait(450);
+      F.afterMove = { order: order(), persisted: savedOrder() };
+      // 5) 再右键甲：文案应变「取消收藏」
+      ctx(0); await wait(80);
+      F.favMenuText = menuState().favText;
+      document.body.click(); await wait(60);   // 关掉右键菜单
+      // 6) 点标签栏 ☆ → 收藏夹下拉打开、列出 1 项
+      $("tab-fav").click(); await wait(100);
+      F.favDropdown = {
+        shown: !$("fav-menu").classList.contains("hidden"),
+        items: document.querySelectorAll('#fav-menu-list .fav-item').length,
+        name: (document.querySelector('#fav-menu-list .fav-name') || {}).textContent
+      };
+      // 7) 关闭甲标签（未脏，直接关）→ 剩 2 个
+      document.body.click(); await wait(60);
+      var jiaEl = tabEls().filter(function (el) { return /甲/.test(((el.querySelector(".tab-label") || {}).textContent) || ""); })[0];
+      if (jiaEl) { var cb = jiaEl.querySelector("[data-tab-close]"); if (cb) cb.click(); }
+      await wait(280);
+      F.afterClose = { count: tabEls().length };
+      // 8) 从收藏夹重新打开甲 → 回到 3 个
+      $("tab-fav").click(); await wait(100);
+      var op = document.querySelector('#fav-menu-list [data-fav-open]');
+      if (op) op.click();
+      await wait(550);
+      F.afterReopen = { count: tabEls().length, hasJia: order().some(function (x) { return /甲/.test(x || ""); }) };
+      // 9) 移除收藏 → favorites 清空、星标消失
+      $("tab-fav").click(); await wait(100);
+      var dl = document.querySelector('#fav-menu-list [data-fav-del]');
+      if (dl) dl.click();
+      await wait(160);
+      F.afterRemove = { favs: favs(), starCount: document.querySelectorAll('#tab-list .tab-star').length };
+
+      F.assert = {
+        layoutOk: R.layoutOk,
+        threeTabs: R.steps[0].tabs.length === 3,
+        favLabelAdd: F.firstMenu.favText === "收藏此标签",
+        firstLeftDisabled: F.firstMenu.mlDisabled === true,
+        firstRightEnabled: F.firstMenu.mrDisabled === false,
+        favWritten: F.afterFav.favs.length === 1 && /甲\.md/.test(F.afterFav.favs[0].path),
+        starShown: F.afterFav.starCount === 1,
+        lastRightDisabled: F.lastMenu.mrDisabled === true,
+        movedOrder: F.afterMove.order[0] === "甲.md" && /丙\./.test(F.afterMove.order[1]),
+        movedPersisted: F.afterMove.persisted.length === 3 && /丙\./.test(F.afterMove.persisted[1]),
+        favLabelRemove: F.favMenuText === "取消收藏",
+        dropdownShows: F.favDropdown.shown && F.favDropdown.items === 1 && /甲/.test(F.favDropdown.name || ""),
+        closedOne: F.afterClose.count === 2,
+        reopenedFromFav: F.afterReopen.count === 3 && F.afterReopen.hasJia,
+        favRemoved: F.afterRemove.favs.length === 0 && F.afterRemove.starCount === 0,
+        noJsErrors: (window.__PAGE_ERRORS__ || []).length === 0
+      };
+      document.documentElement.setAttribute("data-diag", JSON.stringify(F));
+      return;
+    }
+
+    if (MODE === "encoding") {
+      var E = { steps: [] };
+      document.documentElement.setAttribute("data-enc", "entered");
+      function activeTitle() {
+        var a = tabEls().filter(function (el) { return el.classList.contains("active"); })[0];
+        return a ? ((a.querySelector(".tab-label") || {}).textContent || "") : "";
+      }
+      // 初始 3 标签；切到纯文本「乙.txt」（第 2 个），记下默认打开用的编码
+      clickTab(1); await wait(450);
+      document.documentElement.setAttribute("data-enc", "afterClick1");
+      E.beforeEnc = {
+        sourceValue: $("source-view").value,
+        encoding: ($("encoding-select") || {}).value,
+        openCalls: (window.__OPEN_ENCS__ || []).length
+      };
+      // 切编码到 gbk → 触发 change → 应用用 gbk 重新 open_file 并覆盖内容
+      $("encoding-select").value = "gbk";
+      $("encoding-select").dispatchEvent(new Event("change", { bubbles: true }));
+      document.documentElement.setAttribute("data-enc", "dispatched-gbk");
+      await wait(700);
+      document.documentElement.setAttribute("data-enc", "afterWait700");
+      E.afterGbk = {
+        sourceValue: $("source-view").value,
+        encoding: ($("encoding-select") || {}).value,
+        openCalls: (window.__OPEN_ENCS__ || []).length,
+        lastEnc: (window.__OPEN_ENCS__ || []).slice(-1)[0],
+        tabCount: tabEls().length,
+        activeTitle: activeTitle(),
+        scrollTop: $("source-view").scrollTop,
+        savedEncoding: (function () { var v = []; window.__CONFIGS__.forEach(function (c) { try { var o = JSON.parse(c); if ("defaultEncoding" in o) v = o.defaultEncoding; } catch (e) {} }); return v; })()
+      };
+      // 制造未保存修改后切编码 → 应弹确认
+      $("source-view").value += "\\n未保存改动";
+      $("source-view").dispatchEvent(new InputEvent("input", { bubbles: true }));
+      await wait(120);
+      $("encoding-select").value = "utf-8";
+      $("encoding-select").dispatchEvent(new Event("change", { bubbles: true }));
+      await wait(200);
+      E.dirtyPrompt = !$("tab-close-dialog").classList.contains("hidden");
+      // 选「取消」→ 内容应保留未保存改动、下拉回退到文件原编码(gbk)
+      $("tab-close-cancel").click(); await wait(200);
+      E.afterCancel = {
+        hasLocalEdit: /未保存改动/.test($("source-view").value),
+        encoding: ($("encoding-select") || {}).value
+      };
+
+      E.assert = {
+        layoutOk: R.layoutOk,
+        initialTextLoaded: /乙第一行/.test(E.beforeEnc.sourceValue),
+        gbkReloaded: /GBK解码结果/.test(E.afterGbk.sourceValue),
+        gbkPassedToOpen: E.afterGbk.lastEnc && E.afterGbk.lastEnc.encoding === "gbk" && /乙\.txt/.test(E.afterGbk.lastEnc.path),
+        openCallIncremented: E.afterGbk.openCalls === E.beforeEnc.openCalls + 1,
+        sameTabKept: E.afterGbk.tabCount === 3 && /乙/.test(E.afterGbk.activeTitle || ""),
+        stillTextMode: $("editor-wrap").classList.contains("source"),
+        encodingEchoed: E.afterGbk.encoding === "gbk",
+        defaultSaved: E.afterGbk.savedEncoding === "gbk",
+        dirtyPromptShown: E.dirtyPrompt,
+        cancelKeepsEdit: E.afterCancel.hasLocalEdit === true,
+        cancelRevertsDropdown: E.afterCancel.encoding === "gbk",
+        noJsErrors: (window.__PAGE_ERRORS__ || []).length === 0
+      };
+      document.documentElement.setAttribute("data-diag", JSON.stringify(E));
       return;
     }
 
