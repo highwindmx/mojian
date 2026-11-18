@@ -396,7 +396,7 @@
     border-radius: 5px;
   }
   .fav-item:hover { background: var(--color-bg); }
-  .fav-item.open {
+  .fav-item .open {
     flex: 1 1 auto;
     min-width: 0;
     display: flex;
@@ -412,11 +412,12 @@
   }
   .fav-item .fav-ico { color: #d97706; flex: 0 0 auto; }
   .fav-item .fav-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .fav-item.del {
+  .fav-item .del {
     flex: 0 0 auto;
     width: 22px;
     height: 22px;
     padding: 0;
+    margin-left: auto;
     margin-right: 2px;
     border: 0;
     border-radius: 4px;
@@ -425,7 +426,7 @@
     font-size: 11px;
     cursor: default;
   }
-  .fav-item.del:hover { background: var(--color-border); color: var(--color-text); }
+  .fav-item .del:hover { background: var(--color-border); color: var(--color-text); }
   .fav-empty { padding: 12px 8px; color: var(--color-muted); font-size: 12px; line-height: 1.6; }
 
   /* ============================ 工具栏 ============================ */
@@ -1168,6 +1169,20 @@
   .modal-card input[type="text"]:focus {
     border-color: var(--color-primary);
   }
+
+  /* 另存为编码弹窗：原生 select 与输入框同宽，与表单风格一致 */
+  .modal-card select.modal-select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: 6px;
+    font-size: 14px;
+    outline: none;
+    background: var(--color-surface);
+    color: var(--color-text);
+  }
+  .modal-card select.modal-select:focus { border-color: var(--color-primary); }
+  .modal-card label.checkbox input[type="checkbox"]:disabled { opacity: 0.5; }
 
   .modal-card button.file-pick {
     width: 100%;

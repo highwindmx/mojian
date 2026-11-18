@@ -198,6 +198,28 @@
     </div>
   </div>
 
+  <!-- ============================ 另存为：编码 / BOM 选择 ============================ -->
+  <div class="modal hidden" id="saveas-encoding-dialog">
+    <div class="modal-card">
+      <h3>另存为编码</h3>
+      <p class="modal-desc">按当前内容写一份新文件，原文件不变。</p>
+      <label for="saveas-encoding">编码</label>
+      <select id="saveas-encoding" class="modal-select" title="另存为使用的编码">
+        <option value="">自动（UTF-8）</option>
+        <option value="utf-8">UTF-8</option>
+        <option value="gbk">GBK</option>
+        <option value="utf-16le">UTF-16 小端</option>
+        <option value="utf-16be">UTF-16 大端</option>
+      </select>
+      <label class="checkbox" for="saveas-bom"><input type="checkbox" id="saveas-bom"> 写入 BOM（UTF-8 / UTF-16 可用）</label>
+      <p class="modal-desc" id="saveas-enc-hint">GBK 不带 BOM；带 BOM 的文件重新打开时可自动识别编码。</p>
+      <div class="modal-actions">
+        <button id="saveas-enc-cancel">取消</button>
+        <button class="primary" id="saveas-enc-confirm">下一步：选路径</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============================ 工具栏自定义弹窗 ============================ -->
   <div class="modal hidden" id="toolbar-settings">
     <div class="modal-card">

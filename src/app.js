@@ -233,12 +233,13 @@
         dot.setAttribute("aria-hidden", "true");
         btn.appendChild(dot);
       }
-      if (item.value === "export") {
+      if (item.value === "export" || item.value === "saveas") {
         const caret = document.createElement("span");
         caret.className = "tb-caret";
         caret.setAttribute("aria-hidden", "true");
         caret.innerHTML = '<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
         btn.appendChild(caret);
+        if (item.value === "saveas") btn.classList.add("has-caret");
       }
       toolbar.appendChild(btn);
     });
@@ -1179,6 +1180,54 @@
     if (bs) bs.addEventListener("click", function () { finishTabChoice("save"); });
     tabCloseDialog.addEventListener("click", function (e) {
       if (e.target === tabCloseDialog) finishTabChoice("cancel");
+    });
+  }
+
+  /* ---------- 另存为编码 / BOM 弹窗：按当前内存文本写新文件，原文件不动 ----------
+   * 与「顶栏编码下拉」的区别：下拉切换是「用新编码重读磁盘文件」，本弹窗只决定写盘编码。
+   * resolve(null) = 取消整个另存为（不写盘、不切换当前文档身份）。 */
+  let saveAsEncResolver = null;
+  function syncSaveAsBomState() {
+    const sel = document.getElementById("saveas-encoding");
+    const bom = document.getElementById("saveas-bom");
+    if (!sel || !bom) return;
+    const supportsBom = ["", "utf-8", "utf-16le", "utf-16be"].indexOf(sel.value) >= 0;
+    bom.disabled = !supportsBom;
+    if (!supportsBom) bom.checked = false;
+  }
+  function finishSaveAsEncoding(value) {
+    const dlg = document.getElementById("saveas-encoding-dialog");
+    if (dlg) closeModal(dlg);
+    const r = saveAsEncResolver;
+    saveAsEncResolver = null;
+    if (r) r(value);
+  }
+  function askSaveAsEncoding(defaultEnc, defaultBom) {
+    const dlg = document.getElementById("saveas-encoding-dialog");
+    if (!dlg) return Promise.resolve({ encoding: defaultEnc || "", bom: defaultBom || "" });
+    const sel = document.getElementById("saveas-encoding");
+    const bom = document.getElementById("saveas-bom");
+    if (sel) sel.value = defaultEnc || "";
+    if (bom) bom.checked = !!defaultBom;
+    syncSaveAsBomState();
+    openModal(dlg);
+    return new Promise(function (resolve) { saveAsEncResolver = resolve; });
+  }
+  const saveAsEncDlg = document.getElementById("saveas-encoding-dialog");
+  if (saveAsEncDlg) {
+    const sel = document.getElementById("saveas-encoding");
+    const bom = document.getElementById("saveas-bom");
+    if (sel) sel.addEventListener("change", syncSaveAsBomState);
+    const bc = document.getElementById("saveas-enc-cancel");
+    const bo = document.getElementById("saveas-enc-confirm");
+    if (bc) bc.addEventListener("click", function () { finishSaveAsEncoding(null); });
+    if (bo) bo.addEventListener("click", function () {
+      const enc = sel ? sel.value : "";
+      const withBom = !!(bom && bom.checked && !bom.disabled);
+      finishSaveAsEncoding({ encoding: enc, bom: withBom ? (enc || "utf-8") : "" });
+    });
+    saveAsEncDlg.addEventListener("click", function (e) {
+      if (e.target === saveAsEncDlg) finishSaveAsEncoding(null);
     });
   }
 
@@ -2291,6 +2340,61 @@
     setTimeout(function () {
       document.addEventListener("click", onExportMenuOutside, true);
       document.addEventListener("keydown", onExportMenuKey, true);
+    }, 0);
+  }
+
+  /* ---------- 「另存为」拆分按钮：主体=按默认编码另存，箭头=下拉选编码另存 ----------
+   * 挂 body 根层 fixed（z60），不走 toolbar 的 stacking context（见 CSS 顶部层级规范）。 */
+  let saveAsMenuEl = null;
+  let saveAsMenuBtnEl = null;
+  function closeSaveAsMenu() {
+    if (saveAsMenuEl) { saveAsMenuEl.remove(); saveAsMenuEl = null; }
+    saveAsMenuBtnEl = null;
+    document.removeEventListener("click", onSaveAsMenuOutside, true);
+    document.removeEventListener("keydown", onSaveAsMenuKey, true);
+  }
+  function onSaveAsMenuOutside(e) {
+    if (saveAsMenuEl && !saveAsMenuEl.contains(e.target) &&
+        saveAsMenuBtnEl && !saveAsMenuBtnEl.contains(e.target)) closeSaveAsMenu();
+  }
+  function onSaveAsMenuKey(e) { if (e.key === "Escape") closeSaveAsMenu(); }
+  function toggleSaveAsMenu(btn, e) {
+    if (saveAsMenuEl) { closeSaveAsMenu(); return; }
+    if (exportMenuEl) closeExportMenu();   // 两个下拉互斥
+    if (e && e.stopPropagation) e.stopPropagation();
+    saveAsMenuBtnEl = btn;
+    const menu = document.createElement("div");
+    menu.className = "tb-dropdown";
+    menu.setAttribute("role", "menu");
+    // 只保留「更改编码另存」：按默认编码另存 = 直接点主按钮，菜单里再放一份是冗余。
+    const items = [
+      { label: "更改编码另存", desc: "先选编码 / BOM，再选路径", mode: "pick",
+        fn: function () { saveFileAs({ pickEncoding: true }); } },
+    ];
+    items.forEach(function (it) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "tb-dropdown-item";
+      row.setAttribute("role", "menuitem");
+      row.setAttribute("data-saveas-mode", it.mode);
+      row.innerHTML = '<span class="tb-dd-label">' + it.label + '</span>' +
+                      '<span class="tb-dd-desc">' + it.desc + '</span>';
+      row.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        closeSaveAsMenu();
+        it.fn();
+      });
+      menu.appendChild(row);
+    });
+    document.body.appendChild(menu);
+    const r = btn.getBoundingClientRect();
+    // 右对齐到按钮右边缘，避免菜单越出窗口右侧
+    menu.style.left = Math.max(8, Math.min(r.right - 210, window.innerWidth - 220)) + "px";
+    menu.style.top = (r.bottom + 4) + "px";
+    saveAsMenuEl = menu;
+    setTimeout(function () {
+      document.addEventListener("click", onSaveAsMenuOutside, true);
+      document.addEventListener("keydown", onSaveAsMenuKey, true);
     }, 0);
   }
 
@@ -4028,13 +4132,30 @@
     }
   }
 
-  /** 另存为：弹出保存对话框，按后缀决定类型 */
-  async function saveFileAs() {
+  /** 另存为：弹出保存对话框，按后缀决定类型。
+   *  opts.pickEncoding=true：先弹编码 / BOM 窗（在路径框之前），取消则整次另存为中止；
+   *  默认（主按钮）：沿用当前编码 / BOM，不弹编码窗，直接选路径。 */
+  async function saveFileAs(opts) {
+    opts = opts || {};
+    const pickEncoding = opts.pickEncoding === true;
     // PDF 模式下，另存为走 PDF 模块（把旋转/备注/水印/签章一并烤进新文件）
     if (window.__pdfActive && window.PDFApp && window.PDFApp.saveAs) { window.PDFApp.saveAs(); return; }
     if (!TAURI) { setStatus("当前环境不支持保存对话框。", true); return; }
     // 源码模式下右侧是唯一真相：先回填编辑区再序列化，防止另存内容陈旧
     if (sourceMode) applySourceToEditor();
+
+    // 编码选择提前到路径框之前：先定格式，再定路径；取消则不弹路径框、不写盘。
+    let saveEnc = "", saveBom = "";
+    if (pickEncoding) {
+      const pick = await askSaveAsEncoding(
+        (encodingSelect && encodingSelect.value) || (currentFile && currentFile.encoding) || "",
+        (currentFile && currentFile.bom) || ""
+      );
+      if (!pick) return;
+      saveEnc = pick.encoding || "";
+      saveBom = pick.bom || "";
+    }
+
     // 过滤器按当前文档格式动态排序：Windows 对话框默认选中首个过滤器，
     // 因此把"正在编辑的格式"放首位——打开 md 默认存 md，打开 html 默认存 html；
     // 未打开/空白文档默认 md（日常以写 md 为主）。
@@ -4046,11 +4167,18 @@
       { name: "纯文本", extensions: ["txt"], k: "text" },
       { name: "SVG", extensions: ["svg"], k: "svg" },
       { name: "PDF", extensions: ["pdf"], k: "pdf" },
+      // 「所有文件」放末尾：不抢占默认选中的格式过滤器，但要能存任意后缀。
+      { name: "所有文件", extensions: ["*"] },
     ].sort(function (a, b) { return (a.k === _curKind ? -1 : 1) - (b.k === _curKind ? -1 : 1); })
      .map(function (f) { return { name: f.name, extensions: f.extensions }; });
     let path;
     try {
-      path = await tauriSave({ filters: _allFilters });
+      // defaultPath 传当前文件完整路径：保存框直接定位到所在目录并预填文件名，
+      // 未命名文档（无 path）则不传，让系统走默认目录。
+      path = await tauriSave({
+        defaultPath: (currentFile && currentFile.path) || undefined,
+        filters: _allFilters,
+      });
     } catch (e) {
       setStatus("保存失败：" + e, true);
       return;
@@ -4070,14 +4198,20 @@
       path += _ext;
     }
     const kind = detectKindFromPath(path);
+    // 主按钮「按默认编码另存」不走编码窗：沿用当前编码 / BOM（顶栏下拉或文件实际编码）。
+    // 两种模式都按当前内存文本写新文件，不重读磁盘、原文件保持不动。
+    if (!pickEncoding) {
+      saveEnc = (encodingSelect && encodingSelect.value) || (currentFile && currentFile.encoding) || "";
+      saveBom = (currentFile && currentFile.bom) || "";
+    }
     // md → html 特例：不切换编辑对象（md 渲染成的 html 没有继续编辑的价值），
     // 而是写一份带排版样式的独立网页（与「导出」同产物），当前文档仍是 .md。
     // 未保存的新草稿除外——用户正在给文档命名，按真正的转格式处理。
     if (kind === "html" && currentFile && currentFile.kind === "markdown" && currentFile.path) {
       try {
-        const enc = (getConfig().defaultEncoding || "") || undefined;
+        const enc = saveEnc || undefined;
         await awaitLocalImages();
-        await tauriInvoke("save_file", { path, kind: "html", content: buildExportDocument(), encoding: enc });
+        await tauriInvoke("save_file", { path, kind: "html", content: buildExportDocument(), encoding: enc, bom: saveBom || undefined });
         showToast("已存为独立网页，当前仍编辑原 Markdown 文档");
       } catch (e) {
         setStatus("保存失败：" + e, true);
@@ -4086,16 +4220,19 @@
     }
     const prevKind = currentFile ? currentFile.kind : null;
     const prevMeta = currentFile || {};
-    // 另存为是「新文件」：编码 / BOM / 行尾沿用原文件（用户多半想保持格式），
-    // 但不再是只读预览（写到了自己选定的新路径，当然可编辑可保存）。
+    // 另存为接管新文件身份：编码 / BOM 用本次所选（「自动」落盘为 UTF-8），
+    // 行尾仍沿用原文件；写到了自己选定的新路径，不再是只读预览。
     currentFile = {
       path: path,
       kind: kind,
-      encoding: prevMeta.encoding || "utf-8",
-      bom: prevMeta.bom || "",
+      encoding: saveEnc || "utf-8",
+      bom: saveBom,
       lineEnding: prevMeta.lineEnding || "lf",
       readOnly: false,
     };
+    // 同步顶栏下拉口径，但直接赋值不派发 change——否则会按新编码重读磁盘、把内容冲掉。
+    if (encodingSelect) encodingSelect.value = saveEnc;
+    if (typeof updateEditorStatus === "function") updateEditorStatus();
     renderToolbar();   // 另存为可能改类型（如草稿存成 html），重算按钮显隐
     // 同步首屏路径指示与"打开位置"按钮（否则另存为之后仍显示"未打开文件"且按钮灰掉）
     setFilePath(path, true);
@@ -4922,7 +5059,11 @@
       else if (action === "prevfile") goSibling(-1);
       else if (action === "nextfile") goSibling(1);
       else if (action === "save") saveFile();
-      else if (action === "saveas") saveFileAs();
+      else if (action === "saveas") {
+        // 拆分按钮：点箭头开下拉（选编码另存），点主体按默认编码另存
+        if (e.target.closest(".tb-caret")) toggleSaveAsMenu(btn, e);
+        else saveFileAs({ pickEncoding: false });
+      }
       else if (action === "export") toggleExportMenu(btn, e);
       else if (action === "slides") presentSlides();
       else if (action === "outline") toggleMdOutline();

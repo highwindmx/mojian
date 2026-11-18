@@ -154,7 +154,15 @@ function buildPage(mode) {
     event: { listen: function () { return Promise.resolve(function () {}); }, emit: function () { return Promise.resolve(); } },
     dialog: {
       open: function () { return Promise.resolve(null); },
-      save: function () { return Promise.resolve(null); },
+      save: function (opts) {
+        window.__SAVE_DIALOGS__ = (window.__SAVE_DIALOGS__ || 0) + 1;
+        (window.__SAVE_OPTS__ = window.__SAVE_OPTS__ || []).push(opts || {});
+        // 另存为场景：两次调用给不同新路径，验证「写新文件、原文件不动」及两种模式
+        if (window.MODE === "saveasenc") {
+          return Promise.resolve(window.__SAVE_DIALOGS__ === 1 ? "D:/文档/转码目标.txt" : "D:/文档/默认另存.txt");
+        }
+        return Promise.resolve(null);
+      },
       message: function () { return Promise.resolve(null); },
       ask: function () { return Promise.resolve(false); }
     },
@@ -330,6 +338,22 @@ ${mode === "pdf" ? PDF_STUB : ""}
         items: document.querySelectorAll('#fav-menu-list .fav-item').length,
         name: (document.querySelector('#fav-menu-list .fav-name') || {}).textContent
       };
+      // 6b) 收藏项布局：名称占满剩余宽度、删除按钮贴右（验证 .fav-item .open/.del 选择器生效）
+      (function () {
+        var row = document.querySelector('#fav-menu-list .fav-item');
+        var openBtn = row && row.querySelector(".open");
+        var delBtn = row && row.querySelector(".del");
+        var nameEl = row && row.querySelector(".fav-name");
+        if (!row || !openBtn || !delBtn || !nameEl) return;
+        function rr(el) { return el.getBoundingClientRect(); }
+        var r = rr(row), o = rr(openBtn), d = rr(delBtn), n = rr(nameEl);
+        F.favItemLayout = {
+          rowW: Math.round(r.width), openW: Math.round(o.width),
+          nameW: Math.round(n.width), delW: Math.round(d.width),
+          delRightGap: Math.round(r.right - d.right),
+          openFlexGrow: getComputedStyle(openBtn).flexGrow
+        };
+      })();
       // 7) 关闭甲标签（未脏，直接关）→ 剩 2 个
       document.body.click(); await wait(60);
       var jiaEl = tabEls().filter(function (el) { return /甲/.test(((el.querySelector(".tab-label") || {}).textContent) || ""); })[0];
@@ -362,6 +386,10 @@ ${mode === "pdf" ? PDF_STUB : ""}
         movedPersisted: F.afterMove.persisted.length === 3 && /丙\./.test(F.afterMove.persisted[1]),
         favLabelRemove: F.favMenuText === "取消收藏",
         dropdownShows: F.favDropdown.shown && F.favDropdown.items === 1 && /甲/.test(F.favDropdown.name || ""),
+        favNameFillsWidth: F.favItemLayout && F.favItemLayout.openFlexGrow === "1" &&
+          F.favItemLayout.nameW >= F.favItemLayout.openW - 40,
+        favDelAtRight: F.favItemLayout && F.favItemLayout.delRightGap <= 3 &&
+          F.favItemLayout.delW >= 20,
         closedOne: F.afterClose.count === 2,
         reopenedFromFav: F.afterReopen.count === 3 && F.afterReopen.hasJia,
         favRemoved: F.afterRemove.favs.length === 0 && F.afterRemove.starCount === 0,
@@ -433,6 +461,132 @@ ${mode === "pdf" ? PDF_STUB : ""}
         noJsErrors: (window.__PAGE_ERRORS__ || []).length === 0
       };
       document.documentElement.setAttribute("data-diag", JSON.stringify(E));
+      return;
+    }
+
+    if (MODE === "saveasenc") {
+      var S = {};
+      document.documentElement.setAttribute("data-sa", "entered");
+      // 用纯文本「乙.txt」（GBK）做转码目标：内容已是内存文本，不应被重读覆盖
+      clickTab(1); await wait(450);
+      function saBtn() { return document.querySelector('#toolbar [data-action="saveas"]'); }
+      function ddItems() {
+        return Array.prototype.slice.call(document.querySelectorAll(".tb-dropdown [data-saveas-mode]")).map(function (b) { return b.dataset.saveasMode; });
+      }
+      S.before = {
+        source: $("source-view").value,
+        encoding: $("encoding-select").value,
+        saves: window.__SAVES__.length,
+        opens: (window.__OPEN_ENCS__ || []).length,
+        saveDialogs: window.__SAVE_DIALOGS__ || 0
+      };
+
+      // === 路径 A：箭头 → 下拉仅一项「更改编码另存」（编码窗必须在路径框之前）===
+      S.btnHasCaret = !!(saBtn() && saBtn().querySelector(".tb-caret"));
+      var caret = saBtn() && saBtn().querySelector(".tb-caret");
+      if (caret) caret.click();
+      await wait(180);
+      S.dropdown = {
+        shown: ddItems().length > 0,
+        modes: ddItems(),
+        attachedToBody: (function () { var d = document.querySelector(".tb-dropdown"); return !!(d && d.parentElement === document.body); })()
+      };
+      var pickItem = document.querySelector('.tb-dropdown [data-saveas-mode="pick"]');
+      if (pickItem) pickItem.click();
+      await wait(250);
+      // 编码窗已开、路径框还没弹 —— 这是「弹窗提前」的核心证据
+      S.beforeConfirm = {
+        encDialogShown: !$("saveas-encoding-dialog").classList.contains("hidden"),
+        pathDialogs: window.__SAVE_DIALOGS__ || 0,
+        defaults: { enc: $("saveas-encoding").value, bom: $("saveas-bom").checked }
+      };
+      $("saveas-encoding").value = "gbk";
+      $("saveas-encoding").dispatchEvent(new Event("change", { bubbles: true }));
+      S.bomDisabledForGbk = $("saveas-bom").disabled && !$("saveas-bom").checked;
+      $("saveas-encoding").value = "utf-16be";
+      $("saveas-encoding").dispatchEvent(new Event("change", { bubbles: true }));
+      $("saveas-bom").checked = true;
+      $("saveas-enc-confirm").click();
+      await wait(650);
+      S.afterPick = {
+        saves: window.__SAVES__.length,
+        last: window.__SAVES__.slice(-1)[0] || {},
+        pathDialogs: window.__SAVE_DIALOGS__ || 0,
+        encoding: $("encoding-select").value,
+        source: $("source-view").value,
+        opens: (window.__OPEN_ENCS__ || []).length,
+        dialogHidden: $("saveas-encoding-dialog").classList.contains("hidden")
+      };
+
+      // === 路径 B：主按钮 → 按默认编码另存（不弹编码窗，直接路径框）===
+      var b2 = saBtn();
+      if (b2) b2.click();
+      await wait(450);
+      S.afterDefault = {
+        encDialogShown: !$("saveas-encoding-dialog").classList.contains("hidden"),
+        saves: window.__SAVES__.length,
+        last: window.__SAVES__.slice(-1)[0] || {},
+        pathDialogs: window.__SAVE_DIALOGS__ || 0
+      };
+
+      // === 路径 C：箭头 → 更改编码另存 → 取消编码窗 → 不弹路径框、不写盘 ===
+      var caret3 = saBtn() && saBtn().querySelector(".tb-caret");
+      if (caret3) caret3.click();
+      await wait(180);
+      var pickItem3 = document.querySelector('.tb-dropdown [data-saveas-mode="pick"]');
+      if (pickItem3) pickItem3.click();
+      await wait(220);
+      S.cancelShown = !$("saveas-encoding-dialog").classList.contains("hidden");
+      $("saveas-enc-cancel").click();
+      await wait(200);
+      S.afterCancel = {
+        pathDialogs: window.__SAVE_DIALOGS__ || 0,
+        saves: window.__SAVES__.length,
+        encoding: $("encoding-select").value,
+        dialogHidden: $("saveas-encoding-dialog").classList.contains("hidden")
+      };
+
+      S.assert = {
+        layoutOk: R.layoutOk,
+        caretShown: S.btnHasCaret === true,
+        dropdownOnlyPickEncoding: S.dropdown.shown && S.dropdown.modes.length === 1 &&
+          S.dropdown.modes[0] === "pick",
+        dropdownOnBody: S.dropdown.attachedToBody === true,
+        encDialogBeforePath: S.beforeConfirm.encDialogShown === true &&
+          S.beforeConfirm.pathDialogs === S.before.saveDialogs,
+        defaultsFromCurrent: S.beforeConfirm.defaults.enc === "gbk" && S.beforeConfirm.defaults.bom === false,
+        gbkDisablesBom: S.bomDisabledForGbk === true,
+        wroteNewFile: S.afterPick.saves === S.before.saves + 1 &&
+          /转码目标\.txt/.test(S.afterPick.last.path || ""),
+        pathDialogAfterConfirm: S.afterPick.pathDialogs === S.before.saveDialogs + 1,
+        saveFiltersAllFiles: (function () {
+          var fs = ((window.__SAVE_OPTS__ || [])[0] || {}).filters || [];
+          return fs.some(function (f) { return f.name === "所有文件" && f.extensions.join(",") === "*"; });
+        })(),
+        saveCurrentFormatFirst: (((window.__SAVE_OPTS__ || [])[0] || {}).filters || [])[0].name === "纯文本",
+        saveDefaultPathIsCurrent: ((window.__SAVE_OPTS__ || [])[0] || {}).defaultPath === "D:/文档/乙.txt",
+        saveDefaultPathFollowsTab: ((window.__SAVE_OPTS__ || [])[1] || {}).defaultPath === "D:/文档/转码目标.txt",
+        encodingApplied: S.afterPick.last.encoding === "utf-16be",
+        bomApplied: S.afterPick.last.bom === "utf-16be",
+        contentFromMemory: /乙第一行/.test(S.afterPick.last.content || ""),
+        originalUntouched: (window.__SAVES__ || []).every(function (v) { return !/乙\.txt/.test(v.path || ""); }),
+        noReread: S.afterPick.opens === S.before.opens,
+        contentNotOverwritten: /乙第一行/.test(S.afterPick.source || ""),
+        dropdownSynced: S.afterPick.encoding === "utf-16be",
+        dialogClosed: S.afterPick.dialogHidden === true,
+        defaultNoEncDialog: S.afterDefault.encDialogShown === false,
+        defaultWroteNewFile: S.afterDefault.saves === S.afterPick.saves + 1 &&
+          /默认另存\.txt/.test(S.afterDefault.last.path || ""),
+        defaultKeepsEncoding: S.afterDefault.last.encoding === "utf-16be" &&
+          S.afterDefault.last.bom === "utf-16be",
+        defaultPathDialog: S.afterDefault.pathDialogs === S.afterPick.pathDialogs + 1,
+        cancelShows: S.cancelShown === true,
+        cancelNoPathDialog: S.afterCancel.pathDialogs === S.afterDefault.pathDialogs,
+        cancelDoesNotWrite: S.afterCancel.saves === S.afterDefault.saves,
+        cancelKeepsEncoding: S.afterCancel.encoding === "utf-16be",
+        noJsErrors: (window.__PAGE_ERRORS__ || []).length === 0
+      };
+      document.documentElement.setAttribute("data-diag", JSON.stringify(S));
       return;
     }
 
