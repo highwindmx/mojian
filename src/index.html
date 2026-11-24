@@ -18,9 +18,9 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
         <span>打开位置</span>
       </button>
-      <button id="toolbar-settings-btn" class="header-btn"  data-tip="调整按钮显隐与顺序" aria-label="调整按钮显隐与顺序">
+      <button id="toolbar-settings-btn" class="header-btn"  data-tip="打开设置" aria-label="打开设置">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        <span>定制</span>
+        <span>设置</span>
       </button>
       <button type="button" id="tab-fav" class="header-btn" data-tip="打开收藏夹" aria-label="打开收藏夹">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
@@ -40,7 +40,6 @@
         <option value="utf-16le">UTF-16 小端</option>
         <option value="utf-16be">UTF-16 大端</option>
       </select>
-      <span class="hint">拖文件进来即用 · 多标签</span>
     </div>
   </header>
 
@@ -176,11 +175,11 @@
   <div class="modal hidden" id="close-dialog">
     <div class="modal-card">
       <h3>未保存的更改</h3>
-      <p class="modal-desc" id="close-desc">文档有修改尚未保存，直接关闭将丢失这些更改。</p>
+      <p class="modal-desc" id="close-desc">文档有修改尚未保存。选择「不保存」会在临时目录留一份副本。</p>
       <div class="modal-actions">
         <button id="close-cancel">取消</button>
-        <button id="close-discard">不保存，留副本</button>
-        <button class="primary" id="close-save">全部保存并关闭</button>
+        <button id="close-discard">不保存</button>
+        <button class="primary" id="close-save">全部保存</button>
       </div>
     </div>
   </div>
@@ -192,8 +191,8 @@
       <p class="modal-desc" id="tab-close-desc">这个文件的修改还没保存。</p>
       <div class="modal-actions">
         <button id="tab-close-cancel">取消</button>
-        <button id="tab-close-discard">不保存，留副本</button>
-        <button class="primary" id="tab-close-save">保存并关闭</button>
+        <button id="tab-close-discard">不保存</button>
+        <button class="primary" id="tab-close-save">保存</button>
       </div>
     </div>
   </div>
@@ -223,11 +222,12 @@
   <!-- ============================ 工具栏自定义弹窗 ============================ -->
   <div class="modal hidden" id="toolbar-settings">
     <div class="modal-card">
-      <h3>自定义</h3>
+      <h3>设置</h3>
       <button type="button" class="modal-close" data-close aria-label="关闭">×</button>
       <div class="tb-tabs" id="tb-tabs">
         <button type="button" class="tb-tab active" data-tab="toolbar">工具栏</button>
         <button type="button" class="tb-tab" data-tab="assoc">文件关联</button>
+        <button type="button" class="tb-tab" data-tab="other">其他</button>
       </div>
       <div class="tb-tab-panel" id="tb-panel-toolbar">
         <div class="tb-word" id="tb-word">
@@ -268,6 +268,13 @@
           </div>
           <button type="button" id="register-assoc-btn">应用</button>
           <p id="register-assoc-msg" class="tb-assoc-msg"></p>
+        </div>
+      </div>
+      <div class="tb-tab-panel hidden" id="tb-panel-other">
+        <div class="tb-assoc-block">
+          <div class="tb-assoc-title">其他设置</div>
+          <label class="checkbox" for="backup-on-close"><input type="checkbox" id="backup-on-close"> 关闭未保存文件时留临时副本</label>
+          <p class="modal-desc">开启后，关闭确认框选「不保存」会在系统临时目录留一份可找回的副本；关闭后则直接丢弃、不生成副本。PDF / EPUB 不产生文本副本。</p>
         </div>
       </div>
     </div>
@@ -575,6 +582,8 @@
   <script src="vendor/katex/katex.min.js"></script>
   <!-- 轻量 Tooltip 模块（自实现，绕开原生 title 在 Tauri 下的不稳定） -->
   <script src="tooltip.js"></script>
+  <!-- PDF 页缓存（LRU + 字节预算，纯逻辑；须先于 pdf.js） -->
+  <script src="pdf-cache.js"></script>
   <!-- PDF 模块（须先于 app.js，使 window.PDFApp 在启动时可用） -->
   <script src="pdf.js"></script>
   <!-- 幻灯片演示引擎（reveal.js，UMD 全局 Reveal；仅 presentSlides 时用到） -->

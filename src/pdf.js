@@ -144,6 +144,10 @@ window.PDFApp = (function () {
   let renderedThumbs = new Set();
   let pageObserver = null;
   let thumbObserver = null;
+  // 页内存预算（LRU）：只记字节账，canvas 销毁由 onRelease 回调执行
+  let pageCache = null;         // window.PdfPageCache.createPageCache 的实例
+  let visiblePages = new Set(); // 视口内（含预读边距）的页，禁止回收
+  let renderingPages = new Set(); // 正在渲染中的页，禁止回收
   let curEncoding = "";
   // 撤回栈：每次"会改动文档"的操作前压入一份快照（水印/签章/备注/高亮/旋转）
   let history = [];
@@ -855,6 +859,8 @@ window.PDFApp = (function () {
   async function mountShellsAndRender() {
     pagesEl.innerHTML = ""; thumbsEl.innerHTML = ""; outlineEl.innerHTML = "";
     renderedPages = new Set(); renderedThumbs = new Set();
+    if (pageCache) pageCache.clear();
+    visiblePages.clear(); renderingPages.clear();
     for (let i = 1; i <= numPages; i++) {
       pagesEl.appendChild(makePageShell(i));
       thumbsEl.appendChild(makeThumbShell(i));
@@ -877,9 +883,12 @@ window.PDFApp = (function () {
     if (pageObserver) pageObserver.disconnect();
     pageObserver = new IntersectionObserver(function (entries) {
       entries.forEach(function (en) {
+        const n = Number(en.target.dataset.num);
         if (en.isIntersecting) {
-          const n = Number(en.target.dataset.num);
-          renderPage(n);   // 已渲染则自动跳过
+          visiblePages.add(n);   // 视口内（含预读边距）禁止回收
+          renderPage(n);         // 已渲染则自动跳过（内部 touch 刷新 LRU）
+        } else {
+          visiblePages.delete(n);
         }
       });
     }, { root: mainEl, rootMargin: "400px 0px" });
@@ -923,6 +932,8 @@ window.PDFApp = (function () {
     pdfDoc = null; pdfBytes = null; pdfLibDoc = null;
     if (pageObserver) { pageObserver.disconnect(); pageObserver = null; }
     if (thumbObserver) { thumbObserver.disconnect(); thumbObserver = null; }
+    if (pageCache) pageCache.clear();
+    visiblePages.clear(); renderingPages.clear();
     pagesEl.innerHTML = ""; thumbsEl.innerHTML = ""; outlineEl.innerHTML = "";
     pagesEl.classList.remove("sig-placing");
     sigReplaceId = null; hideSigMenu();
@@ -940,65 +951,101 @@ window.PDFApp = (function () {
   /* =====================================================================
    * 渲染：每页 canvas + 文本层 + 备注 / 高亮 / 签章 overlay
    * ===================================================================== */
+  /* 页缓存：首次用到时惰性创建；pdf-cache.js 未加载则退化为原行为（不回收）。
+   * 无 IntersectionObserver 的兜底模式会一次性渲染全部页，回收后无人重绘 → 禁用回收。 */
+  function ensurePageCache() {
+    if (pageCache) return pageCache;
+    const C = window.PdfPageCache;
+    if (!C || typeof C.createPageCache !== "function") return null;
+    const noObserver = typeof IntersectionObserver === "undefined";
+    pageCache = C.createPageCache({
+      budget: noObserver ? Number.MAX_SAFE_INTEGER : C.DEFAULT_BUDGET,
+      onRelease: function (num) {
+        const el = pagesEl && pagesEl.querySelector('.pdf-page[data-num="' + num + '"]');
+        if (el) {
+          const cv = el.querySelector("canvas.pdf-canvas");
+          if (cv) { cv.width = 1; cv.height = 1; } // 主动释放 canvas 后备存储 / 显存
+          el.innerHTML = "";                       // 留空壳：observer 仍监听，滚回时自动重渲染
+        }
+        renderedPages.delete(num);
+      },
+      isProtected: function (num) {
+        return visiblePages.has(num) || renderingPages.has(num) || num === currentPage;
+      },
+    });
+    return pageCache;
+  }
+
   async function renderPage(num, force) {
     if (!pdfDoc) return;
-    if (!force && renderedPages.has(num)) return;  // 懒渲染：已渲染过则跳过
-    const page = await pdfDoc.getPage(num);
-    pageFileRot[num] = page.rotate || 0;         // 文件自带 /Rotate（渲染前先记下）
-    const rotation = effRotation(num);           // 合成：文件自带 + 本次旋转增量
-    const viewport = page.getViewport({ scale: scale, rotation });
-    pageViewports[num] = viewport;
-
-    let pageEl = pagesEl.querySelector('.pdf-page[data-num="' + num + '"]');
-    if (!pageEl) {
-      pageEl = document.createElement("div");
-      pageEl.className = "pdf-page";
-      pageEl.dataset.num = num;
-      pagesEl.appendChild(pageEl);
+    const cache = ensurePageCache();
+    if (!force && renderedPages.has(num)) {
+      if (cache) cache.touch(num);   // 滚回已渲染页：刷新 LRU，别把它当成最旧页回收
+      return;
     }
-    pageEl.innerHTML = "";
-
-    const canvas = document.createElement("canvas");
-    canvas.className = "pdf-canvas";
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.floor(viewport.width * dpr);
-    canvas.height = Math.floor(viewport.height * dpr);
-    canvas.style.width = Math.floor(viewport.width) + "px";
-    canvas.style.height = Math.floor(viewport.height) + "px";
-    pageEl.appendChild(canvas);
-
-    const ctx = canvas.getContext("2d");
-    const transform = dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null;
-    await page.render({ canvasContext: ctx, viewport: viewport, transform: transform }).promise;
-
-    // 文本层（支持选中复制）
+    renderingPages.add(num);
     try {
-      const textContent = await page.getTextContent();
-      const textLayer = document.createElement("div");
-      textLayer.className = "textLayer";
-      // pdf.js 3.x 文本层定位依赖该 CSS 变量（renderTextLayer 内部也会设，这里显式兜底，规避个别环境下 scale 错位）
-      textLayer.style.setProperty("--scale-factor", String(viewport.scale));
-      textLayer.style.width = Math.floor(viewport.width) + "px";
-      textLayer.style.height = Math.floor(viewport.height) + "px";
-      pageEl.appendChild(textLayer);
-      const tlTask = pdfjsLib.renderTextLayer({
-        textContentSource: textContent,
-        container: textLayer,
-        viewport: viewport,
-        enhanceTextSelection: true,
-      });
-      // 兼容不同 pdf.js 构建里 promise 的暴露方式
-      const tlPromise = (tlTask && tlTask.promise) || (tlTask && tlTask._capability && tlTask._capability.promise);
-      if (tlPromise) await tlPromise;
-      // 修正"复制出来是 Fi n al"的经典错误：按 item 几何重建每个 span 文本，去掉字距伪空格
-      alignAndCleanTextLayer(pageEl, textContent.items);
-    } catch (e) { console.warn("文本层渲染失败：", e); }
+      const page = await pdfDoc.getPage(num);
+      pageFileRot[num] = page.rotate || 0;         // 文件自带 /Rotate（渲染前先记下）
+      const rotation = effRotation(num);           // 合成：文件自带 + 本次旋转增量
+      const viewport = page.getViewport({ scale: scale, rotation });
+      pageViewports[num] = viewport;
 
-    renderNotesForPage(num, pageEl);
-    renderHighlightsForPage(num, pageEl, viewport);
-    renderSignaturesForPage(num, pageEl, viewport);
-    if (searchQuery) highlightOnPage(num, searchQuery);
-    renderedPages.add(num);
+      let pageEl = pagesEl.querySelector('.pdf-page[data-num="' + num + '"]');
+      if (!pageEl) {
+        pageEl = document.createElement("div");
+        pageEl.className = "pdf-page";
+        pageEl.dataset.num = num;
+        pagesEl.appendChild(pageEl);
+      }
+      pageEl.innerHTML = "";
+
+      const canvas = document.createElement("canvas");
+      canvas.className = "pdf-canvas";
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(viewport.width * dpr);
+      canvas.height = Math.floor(viewport.height * dpr);
+      canvas.style.width = Math.floor(viewport.width) + "px";
+      canvas.style.height = Math.floor(viewport.height) + "px";
+      pageEl.appendChild(canvas);
+
+      const ctx = canvas.getContext("2d");
+      const transform = dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null;
+      await page.render({ canvasContext: ctx, viewport: viewport, transform: transform }).promise;
+
+      // 文本层（支持选中复制）
+      try {
+        const textContent = await page.getTextContent();
+        const textLayer = document.createElement("div");
+        textLayer.className = "textLayer";
+        // pdf.js 3.x 文本层定位依赖该 CSS 变量（renderTextLayer 内部也会设，这里显式兜底，规避个别环境下 scale 错位）
+        textLayer.style.setProperty("--scale-factor", String(viewport.scale));
+        textLayer.style.width = Math.floor(viewport.width) + "px";
+        textLayer.style.height = Math.floor(viewport.height) + "px";
+        pageEl.appendChild(textLayer);
+        const tlTask = pdfjsLib.renderTextLayer({
+          textContentSource: textContent,
+          container: textLayer,
+          viewport: viewport,
+          enhanceTextSelection: true,
+        });
+        // 兼容不同 pdf.js 构建里 promise 的暴露方式
+        const tlPromise = (tlTask && tlTask.promise) || (tlTask && tlTask._capability && tlTask._capability.promise);
+        if (tlPromise) await tlPromise;
+        // 修正"复制出来是 Fi n al"的经典错误：按 item 几何重建每个 span 文本，去掉字距伪空格
+        alignAndCleanTextLayer(pageEl, textContent.items);
+      } catch (e) { console.warn("文本层渲染失败：", e); }
+
+      renderNotesForPage(num, pageEl);
+      renderHighlightsForPage(num, pageEl, viewport);
+      renderSignaturesForPage(num, pageEl, viewport);
+      if (searchQuery) highlightOnPage(num, searchQuery);
+      renderedPages.add(num);
+      if (cache) cache.add(num, canvas.width * canvas.height * 4); // 估算 canvas 后备存储字节
+    } finally {
+      renderingPages.delete(num);
+    }
+    if (cache) cache.enforce();
   }
 
   function renderNotesForPage(num, pageEl) {
@@ -1333,6 +1380,7 @@ window.PDFApp = (function () {
     const list = [];
     renderedPages.forEach(function (n) { list.push(n); });
     renderedPages.clear();
+    if (pageCache) pageCache.clear();
     list.forEach(function (n) { renderPage(n, true); });
   }
   async function fitWidth() {

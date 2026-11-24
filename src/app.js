@@ -47,6 +47,7 @@
     defaultEncoding: "",   // ""=自动(UTF-8 优先, GBK 兜底) | "utf-8" | "gbk"
     sourceSplit: false,    // 源码分栏模式（左渲染右源码）
     toolbarVisible: true,
+    backupOnClose: true,   // 关闭未保存文件时是否在系统临时目录留副本（设置 → 其他）
     openTabs: [],          // 上次会话打开的文件（重启后按路径重开；每项 { path, scroll }，scroll 记忆滚动位置；旧版纯字符串数组仍兼容）
     favorites: [],         // 收藏的标签文件（便于重新打开）；每项 { path, title, kind }，按收藏先后排列
   };
@@ -257,7 +258,7 @@
   const tbCurList = document.getElementById("tb-current-list");   /* 左列：当前显示 */
   let tbAvailSel = null;  /* 右列表选中的命令 token */
   let tbCurSelIdx = -1;   /* 左列表选中的序号（在可见序列中的位置） */
-  let tbCtx = null;       /* 当前定制的上下文，打开弹窗时设置 */
+  let tbCtx = null;       /* 当前设置的上下文，打开弹窗时设置 */
 
   /** 编辑器工具栏上下文 */
   const editorTbCtx = {
@@ -489,46 +490,58 @@
     if (down) down.addEventListener("click", function () { if (tbCtx) tbMoveSelected(tbCtx, 1); });
   }
 
-  /* PDF 打开时，「定制」同样用 Word 式双列表，只是上下文换成 PDF 工具栏 */
+  /* PDF 打开时，「设置」同样用 Word 式双列表，只是上下文换成 PDF 工具栏 */
   function pdfCustomizeActive() {
     return !!(window.__pdfActive && window.PDFApp && window.PDFApp.getToolbarCtx);
   }
-  // 定制弹窗 Tab 切换（工具栏 / 文件关联）
+  // 设置弹窗 Tab 切换（工具栏 / 文件关联 / 其他）
+  const backupOnCloseCb = document.getElementById("backup-on-close");
+  function syncBackupSettingUI() {
+    if (backupOnCloseCb) backupOnCloseCb.checked = getConfig().backupOnClose !== false;
+  }
+  if (backupOnCloseCb) backupOnCloseCb.addEventListener("change", function () {
+    saveConfig({ backupOnClose: backupOnCloseCb.checked });
+  });
   function showTbTab(name) {
+    const tabBtn = document.querySelector('#tb-tabs .tb-tab[data-tab="' + name + '"]');
+    if (tabBtn && tabBtn.classList.contains("hidden")) name = "assoc"; // EPUB 模式无工具栏 Tab
     document.querySelectorAll("#tb-tabs .tb-tab").forEach(function (t) {
       t.classList.toggle("active", t.dataset.tab === name);
     });
     const tb = document.getElementById("tb-panel-toolbar");
     const ac = document.getElementById("tb-panel-assoc");
+    const ot = document.getElementById("tb-panel-other");
     if (tb) tb.classList.toggle("hidden", name !== "toolbar");
     if (ac) ac.classList.toggle("hidden", name !== "assoc");
+    if (ot) ot.classList.toggle("hidden", name !== "other");
     // 仅在切到「文件关联」时才查询注册表状态，避免打开弹窗时被 4 次 reg query 拖慢
     if (name === "assoc") refreshAssocChecks();
+    if (name === "other") syncBackupSettingUI();
   }
   document.querySelectorAll("#tb-tabs .tb-tab").forEach(function (t) {
     t.addEventListener("click", function () { showTbTab(t.dataset.tab); });
   });
-  // 定制弹窗布局三态：editor=Tab 栏+双列表+md 说明；pdf=Tab 栏+双列表（无 md 说明，
-  // 保留「文件关联」Tab）；assoc-only=仅文件关联面板（EPUB 只读模式没有工具栏可定制）
+  // 设置弹窗布局三态：editor=三 Tab + 双列表 + md 说明；pdf=三 Tab + 双列表（无 md 说明）；
+  // assoc-only=EPUB 只读模式——隐藏工具栏 Tab，保留「文件关联 / 其他」
   function setTbTabsVisible(mode) {
     const tabsEl = document.getElementById("tb-tabs");
+    const tbTab = tabsEl && tabsEl.querySelector('.tb-tab[data-tab="toolbar"]');
     const tbPanel = document.getElementById("tb-panel-toolbar");
-    const ac = document.getElementById("tb-panel-assoc");
     const desc = document.getElementById("tb-htmlonly-desc");
     const assocOnly = mode === "assoc-only";
-    if (tabsEl) tabsEl.classList.toggle("hidden", assocOnly);
+    if (tabsEl) tabsEl.classList.remove("hidden");
+    if (tbTab) tbTab.classList.toggle("hidden", assocOnly);
     if (tbPanel) tbPanel.classList.toggle("hidden", assocOnly);
     if (tbWordPanel) tbWordPanel.classList.toggle("hidden", assocOnly);
-    if (toolbarSettingsModal) toolbarSettingsModal.classList.toggle("wide", !assocOnly);
+    if (toolbarSettingsModal) toolbarSettingsModal.classList.add("wide");
     if (desc) desc.classList.toggle("hidden", mode !== "editor");
-    if (assocOnly && ac) ac.classList.remove("hidden");
   }
 
   if (toolbarSettingsBtn) toolbarSettingsBtn.addEventListener("click", function () {
     const title = toolbarSettingsModal && toolbarSettingsModal.querySelector("h3");
-    // EPUB 只读模式：没有可定制的工具栏，直接展示「文件关联」面板
+    if (title) title.textContent = "设置";
+    // EPUB 只读模式：隐藏工具栏 Tab，从「文件关联」开始
     if (window.__epubActive) {
-      if (title) title.textContent = "文件关联";
       tbCtx = null;                          // 双列表已隐藏，防误触
       setTbTabsVisible("assoc-only");
       if (toolbarSettingsModal) openModal(toolbarSettingsModal);
@@ -536,8 +549,7 @@
       return;
     }
     if (pdfCustomizeActive()) {
-      // PDF 模式：同一套 Word 双列表，上下文换成 PDF 工具栏；Tab 栏保留（视觉统一，含「文件关联」）
-      if (title) title.textContent = "自定义 PDF 工具栏";
+      // PDF 模式：同一套 Word 双列表，上下文换成 PDF 工具栏；Tab 栏保留（含「文件关联 / 其他」）
       tbCtx = window.PDFApp.getToolbarCtx();
       tbAvailSel = null;
       tbCurSelIdx = -1;
@@ -547,7 +559,6 @@
       showTbTab("toolbar");
       return;
     }
-    if (title) title.textContent = "自定义工具栏";
     setTbTabsVisible("editor");
     openToolbarSettings();
     showTbTab("toolbar");                    // 编辑器模式：默认停在「工具栏」Tab
@@ -639,6 +650,8 @@
   }
 
   function getConfig() { return appConfig; }
+  /** 关闭确认框选「不保存」时是否写临时副本（设置 → 其他；默认开，旧配置兼容） */
+  function backupOnCloseEnabled() { return getConfig().backupOnClose !== false; }
 
   /* =====================================================================
    * 常量与全局状态
@@ -700,7 +713,7 @@
     // PDF / EPUB 的脏标记来自 pdf.js 自己的 dirty（contentSignature 对整窗视图返回 null）
     if (currentFile && isViewerKind(currentFile.kind)) dirty = viewerDirty(currentFile.kind);
     try { document.title = (dirty ? "● " : "") + docTitleBase; } catch (e) {}
-    // 角标挂在「保存」按钮右上角；若用户在工具栏定制里藏了保存按钮则无角标（仅剩标题前缀兜底）
+    // 角标挂在「保存」按钮右上角；若用户在工具栏设置里藏了保存按钮则无角标（仅剩标题前缀兜底）
     const dot = toolbar && toolbar.querySelector('[data-action="save"] .dirty-dot');
     if (dot) dot.classList.toggle("hidden", !dirty);
     updateTabDirtyDot(dirty);   // 同步当前标签上的琥珀圆点
@@ -1152,7 +1165,7 @@
     }, 300);
   }
 
-  /* ---------- 三态确认弹窗：取消 / 不保存（留副本）/ 保存 ---------- */
+  /* ---------- 三态确认弹窗：取消 / 不保存 / 保存 ---------- */
   function finishTabChoice(value) {
     if (tabCloseDialog) closeModal(tabCloseDialog);
     const r = tabChoiceResolver;
@@ -1166,8 +1179,8 @@
     const bs = document.getElementById("tab-close-save");
     const bd = document.getElementById("tab-close-discard");
     if (desc) desc.textContent = msg;
-    if (bs) bs.textContent = opts.saveLabel || "保存并关闭";
-    if (bd) bd.textContent = opts.discardLabel || "不保存，留副本";
+    if (bs) bs.textContent = opts.saveLabel || "保存";
+    if (bd) bd.textContent = opts.discardLabel || "不保存";
     openModal(tabCloseDialog);
     return new Promise(function (resolve) { tabChoiceResolver = resolve; });
   }
@@ -1260,7 +1273,7 @@
     if (!isViewerKind(t.kind) || !viewerDirty(t.kind)) return true;
     const choice = await askTabChoice(
       "这个 PDF 有未保存的旋转 / 签章 / 水印。切换标签会重建视图，这些修改会丢失。",
-      { saveLabel: "保存并切换", discardLabel: "不保存，直接切换" }
+      { saveLabel: "保存", discardLabel: "不保存" }
     );
     if (choice === "cancel") return false;
     if (choice === "save") {
@@ -1298,12 +1311,14 @@
     // 否则切走后残留的 dirty 会让其它 PDF 标签被误判成未保存。
     const isDirtyNow = t.dirty || (t.id === activeTabId && viewerDirty(t.kind));
     if (isDirtyNow) {
+      const keepBackup = backupOnCloseEnabled();
       const msg = isViewerKind(t.kind)
         ? "这个 PDF 有未保存的旋转 / 签章 / 水印，关闭后无法找回。"
-        : "「" + t.title + "」的修改还没保存。不保存会在临时目录留一份副本。";
+        : "「" + t.title + "」的修改还没保存。" +
+          (keepBackup ? "不保存会在临时目录留一份副本。" : "不保存将直接丢弃，不会留下副本。");
       const choice = await askTabChoice(msg, {
-        saveLabel: "保存并关闭",
-        discardLabel: isViewerKind(t.kind) ? "不保存，直接关闭" : "不保存，留副本",
+        saveLabel: "保存",
+        discardLabel: "不保存",
       });
       if (choice === "cancel") return;
       if (choice === "save") {
@@ -1314,7 +1329,7 @@
           return;
         }
       } else {
-        await backupTab(t);
+        if (keepBackup) await backupTab(t);
       }
     }
     const idx = tabs.indexOf(t);
@@ -2768,6 +2783,16 @@
    * 直接写 #status（不走 setStatus，避免每次输入都弹 Toast）。
    * PDF 模式下由 pdf.js 接管状态栏，这里直接返回。 */
   let statusTimer = null;
+  /** 把光标前的纯文本换算为 1-based「行 / 字符」；忽略 \r，兼容 CRLF 文件 */
+  function offsetToLineCol(text) {
+    let line = 1, col = 1;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text.charAt(i);
+      if (ch === "\n") { line++; col = 1; }
+      else if (ch !== "\r") col++;
+    }
+    return { line: line, col: col };
+  }
   function updateEditorStatus() {
     if (window.__pdfActive || window.__epubActive) return;
     const el = document.getElementById("status");
@@ -2783,14 +2808,22 @@
     const en = (text.match(/[A-Za-z0-9]+/g) || []).length;
     let pos = "";
     try {
-      if (isText && sourceView) {
-        pos = "　光标 " + (sourceView.selectionStart + 1);
+      let lc = null;
+      // 纯文本 / 源码模式（含分栏焦点在源码栏）以 textarea 为准，其余以富文本选区为准
+      const inSource = !!sourceView && (isText || sourceMode || document.activeElement === sourceView);
+      if (inSource) {
+        lc = offsetToLineCol(sourceView.value.slice(0, sourceView.selectionStart || 0));
       } else {
         const sel = window.getSelection();
-        if (sel && sel.anchorNode && editor.contains(sel.anchorNode) && typeof getCaretOffset === "function") {
-          pos = "　光标 " + (getCaretOffset() + 1);
+        if (sel && sel.rangeCount && sel.anchorNode && editor.contains(sel.anchorNode)) {
+          const range = sel.getRangeAt(0);
+          const pre = range.cloneRange();
+          pre.selectNodeContents(editor);
+          pre.setEnd(range.endContainer, range.endOffset);
+          lc = offsetToLineCol(pre.toString());
         }
       }
+      if (lc) pos = "　行 " + lc.line + "，字符 " + lc.col;
     } catch (e) {}
     const ro = (currentFile && currentFile.readOnly) ? "　只读" : "";
     el.textContent = "字数 " + chars + "　编码 " + (enc || "自动") + ro + pos;
@@ -3794,7 +3827,7 @@
     const root = document.getElementById("epub-root");
     if (root) root.classList.remove("hidden");
     // EPUB 自带顶部信息栏（目录/章节/查找/退出）；主状态栏在此模式下无意义且会顶到页面上方，隐藏之。
-    // 全局应用栏（打开位置/定制/主题）保留可见，避免 EPUB 模式下顶部菜单整体丢失；编码选框隐藏（对 EPUB 无意义）。
+    // 全局应用栏（打开位置/设置/主题）保留可见，避免 EPUB 模式下顶部菜单整体丢失；编码选框隐藏（对 EPUB 无意义）。
     updateEncodingVisible();
     const stb = document.querySelector(".status-bar");
     if (stb) stb.classList.add("hidden");
@@ -4580,7 +4613,7 @@
   if (folderBtn) folderBtn.addEventListener("click", openContainingFolder);
 
   /* =====================================================================
-   * 关闭保护：有未保存修改时拦截关窗，弹「保存并关闭 / 直接关闭 / 取消」
+   * 关闭保护：有未保存修改时拦截关窗，弹「保存 / 不保存 / 取消」
    * ===================================================================== */
   function currentWindow() {
     try {
@@ -4625,7 +4658,10 @@
         event.preventDefault();
         const cd = document.getElementById("close-dialog");
         const desc = document.getElementById("close-desc");
-        if (desc) desc.textContent = "有 " + dirty.length + " 个文件的修改还没保存。不保存会在临时目录为每个文件留一份副本。";
+        if (desc) desc.textContent = "有 " + dirty.length + " 个文件的修改还没保存。" +
+          (backupOnCloseEnabled()
+            ? "选择「不保存」会在临时目录为每个文件留一份副本。"
+            : "选择「不保存」将直接丢弃，不会生成副本。");
         if (cd) openModal(cd);
       });
     } catch (e) {}
@@ -4645,9 +4681,11 @@
     const cs = document.getElementById("close-save");
     if (cc) cc.addEventListener("click", function () { closeModal(closeDialog); });
     if (cdx) cdx.addEventListener("click", async function () {
-      // 直接关闭：给每个未保存的文本标签在系统临时目录留一份副本（PDF/EPUB 无文本副本）
-      const list = dirtyTabsNow();
-      for (let i = 0; i < list.length; i++) await backupTab(list[i]);
+      // 不保存直接关闭：按「设置 → 其他」决定是否留临时副本（PDF/EPUB 无文本副本）
+      if (backupOnCloseEnabled()) {
+        const list = dirtyTabsNow();
+        for (let i = 0; i < list.length; i++) await backupTab(list[i]);
+      }
       closeModal(closeDialog);
       destroyCurrentWindow();
     });
@@ -4704,7 +4742,7 @@
     if (dirty) {
       const choice = await askTabChoice(
         "切换编码会用新编码重新读取磁盘文件，当前未保存的修改会丢失。",
-        { saveLabel: "先保存再切换", discardLabel: "不保存，重新读取" }
+        { saveLabel: "保存", discardLabel: "不保存" }
       );
       if (choice === "cancel") {
         if (encodingSelect && currentFile) encodingSelect.value = currentFile.encoding || "";
@@ -5513,6 +5551,9 @@
     updateToolbarState();
     scheduleStatus();
   });
+  // textarea 的光标移动不总是触发 document selectionchange，补两个事件保证状态栏实时跟手
+  sourceView.addEventListener("keyup", scheduleStatus);
+  sourceView.addEventListener("click", scheduleStatus);
 
   /** 当前选区是否位于列表项（li）内，用于决定 Tab 是否执行缩进 */
   function isSelectionInList() {
@@ -5605,7 +5646,7 @@
     // WYSIWYG 往返 / 大纲 / 围栏块(math,mermaid) 等能力；标题仍显示"未打开文件"。
     // 注意：须先定 currentFile 再渲染工具栏——md 下要隐藏 htmlOnly 按钮（下划线/颜色/视频）。
     currentFile = { path: null, kind: "markdown" };
-    // 依据配置动态渲染工具栏（顺序 / 显隐由定制弹窗的 ↑/↓ 调整）
+    // 依据配置动态渲染工具栏（顺序 / 显隐由设置弹窗的 ↑/↓ 调整）
     renderToolbar();
     applyMarkedConfig(); // 屏蔽 GFM 删除线对医学文本 ~ 范围的误判（必须在首次 marked.parse 前生效）
     updatePlaceholder();

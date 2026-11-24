@@ -181,6 +181,7 @@ function buildPage(mode) {
 <script src="vendor/mermaid.min.js"></script>
 <script src="vendor/katex/katex.min.js"></script>
 <script src="tooltip.js"></script>
+<script src="pdf-cache.js"></script>
 <script src="pdf.js"></script>
 ${mode === "pdf" ? PDF_STUB : ""}
 <script src="vendor/reveal/reveal.js"></script>
@@ -243,6 +244,77 @@ ${mode === "pdf" ? PDF_STUB : ""}
         noSourceMode: !$("editor-wrap").classList.contains("source")
       };
       document.documentElement.setAttribute("data-diag", JSON.stringify(R));
+      return;
+    }
+
+    if (MODE === "settings") {
+      var S = {};
+      S.topBtn = (($("toolbar-settings-btn") || {}).textContent || "").trim();
+      S.hintGone = !document.querySelector(".app-header .hint");
+      S.tabs = Array.prototype.slice.call(document.querySelectorAll("#tb-tabs .tb-tab"))
+        .map(function (b) { return b.dataset.tab; });
+      $("toolbar-settings-btn").click(); await wait(200);
+      R.settingsOpen = !$("toolbar-settings").classList.contains("hidden");
+      document.querySelector('#tb-tabs .tb-tab[data-tab="other"]').click(); await wait(150);
+      S.otherShown = !$("tb-panel-other").classList.contains("hidden");
+      S.backupDefault = $("backup-on-close").checked;
+
+      // 默认开启：脏标签关闭提示应说明会留副本，按钮文案简化为「不保存 / 保存」
+      clickTab(0); await wait(350);
+      var ed = $("editor");
+      ed.innerHTML += "<p>临时改动SETTINGS</p>";
+      ed.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "S" }));
+      await wait(180);
+      var closeBtn = document.querySelector('#tab-list .tab [data-tab-close]');
+      if (closeBtn) closeBtn.click(); await wait(250);
+      S.descOn = $("tab-close-desc").textContent;
+      S.discardText = $("tab-close-discard").textContent;
+      S.saveText = $("tab-close-save").textContent;
+      $("tab-close-cancel").click(); await wait(150);
+
+      // 关掉副本开关（设置弹窗仍开着）；配置应落盘
+      $("backup-on-close").checked = false;
+      $("backup-on-close").dispatchEvent(new Event("change", { bubbles: true }));
+      await wait(120);
+      S.configWritten = (window.__CONFIGS__ || []).some(function (c) {
+        try { return JSON.parse(c).backupOnClose === false; } catch (e) { return false; }
+      });
+      // 再关一次：提示改为「不会留下副本」，点「不保存」不写备份
+      var backupsBefore = window.__BACKUPS__.length;
+      closeBtn = document.querySelector('#tab-list .tab [data-tab-close]');
+      if (closeBtn) closeBtn.click(); await wait(250);
+      S.descOff = $("tab-close-desc").textContent;
+      $("tab-close-discard").click(); await wait(500);
+      S.noBackupWhenOff = window.__BACKUPS__.length === backupsBefore;
+      S.tabCountAfter = tabEls().length;
+
+      // 光标位置：切到文本标签（现为第 0 个），放到第 2 行第 2 字符
+      clickTab(0); await wait(400);
+      var sv = $("source-view");
+      sv.focus();
+      sv.selectionStart = sv.selectionEnd = 6;   // 乙.txt 第 2 行第 2 字符
+      sv.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: "ArrowRight" }));
+      await wait(300);
+      S.statusText = $("status").textContent;
+
+      S.assert = {
+        layoutOk: R.layoutOk,
+        topRenamed: S.topBtn === "设置",
+        hintRemoved: S.hintGone === true,
+        otherTabAdded: S.tabs.length === 3 && S.tabs.indexOf("other") >= 0,
+        settingsOpened: R.settingsOpen === true,
+        otherPanelShown: S.otherShown === true,
+        backupDefaultOn: S.backupDefault === true,
+        buttonsSimplified: S.discardText === "不保存" && S.saveText === "保存",
+        descOnMentionsBackup: /留一份副本/.test(S.descOn),
+        settingPersisted: S.configWritten === true,
+        descOffMentionsDiscard: /不会留下副本/.test(S.descOff),
+        noBackupWhenOff: S.noBackupWhenOff === true,
+        tabClosed: S.tabCountAfter === 2,
+        cursorLineChar: /行 2，字符 2/.test(S.statusText || ""),
+        noJsErrors: (window.__PAGE_ERRORS__ || []).length === 0
+      };
+      document.documentElement.setAttribute("data-diag", JSON.stringify(S));
       return;
     }
 
