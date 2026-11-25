@@ -182,7 +182,7 @@ mojian/
 ├── docs/                   # 架构设计（system_design.md + 类图 / 时序图）+ README 截图
 ├── examples/               # 示例文件（JSON 表格 / 嵌套对象 / 标量数组等）
 ├── tools/                  # 开发辅助脚本（PDF 几何验证、图标生成、README 截图、纯文本与多标签无头验证、PDF 页缓存单测）
-├── .github/workflows/      # release.yml：push v* tag 触发三平台自动构建并发布 Release 草稿
+├── .github/workflows/      # release.yml：push v* tag 触发四路构建（含 Windows portable ZIP）并发布 Release 草稿
 ├── BUILD.md                # 构建细节
 ├── CHANGELOG.md            # 发版说明
 └── LICENSE
