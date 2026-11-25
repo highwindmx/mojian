@@ -2,6 +2,17 @@
 
 本文件记录墨笺 (Mojian) 每个版本的变更。版本号遵循语义化版本（SemVer）： 新增功能升次版本号（x.**y**.0），仅修复升修订号（x.y.**z**）。
 
+## 1.1.1 (2026-11-25)
+
+### ✨ 新增
+
+-   **GitHub Actions 三平台发版**：新增 `.github/workflows/release.yml`，推送 `v*` tag 后并行构建 Windows（`.msi` / NSIS）、Linux（`.deb` / `.AppImage`）、macOS（Apple Silicon + Intel 双架构 `.dmg`），自动创建 Release 草稿并上传产物（同时保留 workflow artifacts）。走纯 cargo 路线（无 `package.json` / 无 npm）：`cargo install tauri-cli` + `tauriScript: tauri`；macOS 无证书时用 ad-hoc 签名避免「已损坏」提示，Linux 限定 `deb,appimage` 规避 rpm 工具链依赖。支持 `workflow_dispatch` 手动触发做构建验证。
+
+### 🔧 调整
+
+-   补齐 macOS 图标 `src-tauri/icons/icon.icns`（128/256/512/1024 四档 PNG 条目），加入 `tauri.conf.json` 的 `bundle.icon`；新增 `tools/gen_mojian_icns.py`（复用现有纯 Python PNG 编解码，从 1024 母版生成 ICNS，零第三方依赖）。
+-   清理早期遗留的 `package.json` / `.eslintrc.json`（日常与安装器打包均走 cargo），README / BUILD.md 的打包说明同步改为 `cargo install tauri-cli`。
+
 ## 1.1.0 (2026-11-24)
 
 ### ✨ 新增

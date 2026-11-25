@@ -7,7 +7,7 @@
 -   **Rust 工具链**：安装 [rustup](https://rustup.rs/)，使用 MSVC 目标（`stable-x86_64-pc-windows-msvc`）。
 -   **C++ 构建工具**：Visual Studio 2022「使用 C++ 的桌面开发」工作负载（提供 MSVC 编译器与 Windows SDK）。
 -   **WebView2 运行时**：Windows 11 已内置；Windows 10 若缺失，请安装 [Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
--   **（仅打包安装器时需要）Node.js + npm**：用于调用 `@tauri-apps/cli` 生成 `.msi` / `.appimage` 等安装包。
+-   **（仅打包安装器时需要）Tauri CLI**：`cargo install tauri-cli --version '^2'`，用于生成 `.msi` / `.appimage` 等安装包；日常开发 / 运行无需安装。
 
 ## 运行与调试构建
 
@@ -26,7 +26,7 @@ cargo build --release  # 发布构建，产物：target/release/mojian.exe
 仅在需要分发 `.msi` / `.appimage` 等安装包时执行：
 
 ```bash
-npm install @tauri-apps/cli
+cargo install tauri-cli --version '^2'   # 首次需安装 Tauri CLI
 cd src-tauri
 cargo tauri build      # 生成对应平台安装器
 ```

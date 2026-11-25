@@ -4,7 +4,7 @@
 
 > 本地多格式文档编辑器 —— 基于 Tauri 2 的轻量桌面应用，打开即编、覆盖写回。
 
-**当前版本：1.1.0**
+**当前版本：1.1.1**
 
 墨笺是一款面向本地文件的 **多格式编辑器**（Markdown / HTML / SVG / PDF / EPUB / JSON / 纯文本），基于 **Tauri 2（Rust + 系统 WebView）** 构建，安装包小、启动快、完全离线可用。
 
@@ -113,7 +113,7 @@ cd src-tauri
 cargo build --release      # 产物：target/release/mojian.exe
 ```
 
-双击 `mojian.exe` 即可运行（需 WebView2 运行时，Win11 已内置）。仅当要打 MSI / NSIS **安装器**时，才需要 Node + `cargo tauri build`——细节见 [BUILD.md](./BUILD.md)。
+双击 `mojian.exe` 即可运行（需 WebView2 运行时，Win11 已内置）。仅当要打 MSI / NSIS **安装器**时，才需要额外安装 Tauri CLI（`cargo install tauri-cli`）——细节见 [BUILD.md](./BUILD.md)。
 
 ## 📖 使用说明对照表
 
@@ -182,10 +182,10 @@ mojian/
 ├── docs/                   # 架构设计（system_design.md + 类图 / 时序图）+ README 截图
 ├── examples/               # 示例文件（JSON 表格 / 嵌套对象 / 标量数组等）
 ├── tools/                  # 开发辅助脚本（PDF 几何验证、图标生成、README 截图、纯文本与多标签无头验证、PDF 页缓存单测）
+├── .github/workflows/      # release.yml：push v* tag 触发三平台自动构建并发布 Release 草稿
 ├── BUILD.md                # 构建细节
 ├── CHANGELOG.md            # 发版说明
-├── LICENSE
-└── package.json            # 仅打包安装器时需要
+└── LICENSE
 ```
 
 ## ⚠️ 已知限制

@@ -1,0 +1,80 @@
+name: release
+
+# 只在版本 tag（v1.1.1 形式）推送时构建，避免日常 push 烧 CI 分钟。
+# 也可在 Actions 页手动触发做构建验证。
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            platform: windows-latest
+            args: ''
+          - name: Linux x64
+            platform: ubuntu-22.04
+            args: '--bundles deb,appimage'
+          - name: macOS Apple Silicon
+            platform: macos-latest
+            args: '--target aarch64-apple-darwin'
+          - name: macOS Intel
+            platform: macos-latest
+            args: '--target x86_64-apple-darwin'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ startsWith(matrix.platform, 'macos') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+
+      # 墨笺无 package.json / 无 npm 依赖，走纯 cargo 路线：
+      # 先装 tauri-cli，再用 tauriScript 告诉 action 直接执行 `tauri build`。
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version '^2' --locked
+
+      - name: Build and publish
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 无 Apple 证书：ad-hoc 签名（`-`），避免 Apple Silicon 下载后报「已损坏」。
+          # 注意：这只是 ad-hoc，用户首次打开仍需在「隐私与安全性」里放行。
+          APPLE_SIGNING_IDENTITY: ${{ startsWith(matrix.platform, 'macos') && '-' || '' }}
+        with:
+          tauriScript: tauri
+          tagName: v__VERSION__
+          releaseName: 墨笺 v__VERSION__
+          releaseBody: |
+            墨笺 v__VERSION__ —— 本地多格式文档编辑器。
+
+            - Windows：`.msi` 安装包
+            - Linux：`.deb` / `.AppImage`
+            - macOS：`.dmg`（Apple Silicon 与 Intel 两个架构）
+
+            macOS 未签名（ad-hoc），首次打开请在「系统设置 → 隐私与安全性」点「仍要打开」。
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+          uploadWorkflowArtifacts: true
