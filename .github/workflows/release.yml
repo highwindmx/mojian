@@ -70,7 +70,7 @@ jobs:
           releaseBody: |
             墨笺 v__VERSION__ —— 本地多格式文档编辑器。
 
-            - Windows：`.msi` 安装包
+            - Windows：`.msi` 安装包 / 便携版 `.zip`（解压即用，无需安装）
             - Linux：`.deb` / `.AppImage`
             - macOS：`.dmg`（Apple Silicon 与 Intel 两个架构）
 
@@ -79,3 +79,62 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
           uploadWorkflowArtifacts: true
+
+  # Windows 便携版：不依赖 MSI/NSIS 打包，单独 cargo build 出 exe 后压 ZIP。
+  # needs: build + always()，保证 MSI 阶段万一失败也能拿到便携包。
+  portable-windows:
+    name: Windows portable (ZIP)
+    runs-on: windows-latest
+    needs: build
+    if: ${{ always() }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Build portable binary
+        run: cargo build --release --manifest-path src-tauri/Cargo.toml
+
+      - name: Pack portable ZIP
+        shell: pwsh
+        run: |
+          $version = (Get-Content -Raw src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          $stage = "portable-stage"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item -Path "src-tauri/target/release/mojian.exe" -Destination $stage
+          Copy-Item -Path "README.md","LICENSE" -Destination $stage
+          @"
+          墨笺 $version 便携版（Windows x64）
+
+          - 解压后用 mojian.exe 启动，无需安装。
+          - 前端已内置在 exe 中，配置保存在用户目录。
+          - 需要 WebView2 运行时（Windows 11 自带；Win10 如缺失请安装 Microsoft Edge WebView2 Runtime）。
+          "@ | Set-Content -Path "$stage/README-PORTABLE.txt" -Encoding utf8
+          Compress-Archive -Path "$stage/*" -DestinationPath "mojian-portable-x64-$version.zip" -CompressionLevel Optimal
+
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mojian-portable-x64
+          path: mojian-portable-*.zip
+          if-no-files-found: error
+
+      - name: Upload portable ZIP to release draft
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = (Get-Content -Raw src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          $tag = "v$version"
+          gh release view $tag --json isDraft > $null 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Release $tag 尚未创建，跳过 Release 上传；ZIP 已作为 Actions 产物保留。"
+            exit 0
+          }
+          gh release upload $tag "mojian-portable-x64-$version.zip" --clobber
