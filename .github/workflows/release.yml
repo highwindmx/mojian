@@ -51,7 +51,8 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
 
       # 墨笺无 package.json / 无 npm 依赖，走纯 cargo 路线：
-      # 先装 tauri-cli，再用 tauriScript 告诉 action 直接执行 `tauri build`。
+      # cargo install tauri-cli 只提供 cargo-tauri（无独立 tauri 可执行文件），
+      # 因此 tauriScript 必须是 `cargo tauri`，由 action 拆成 bin=cargo + 参数 tauri。
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version '^2' --locked
 
@@ -63,7 +64,7 @@ jobs:
           # 注意：这只是 ad-hoc，用户首次打开仍需在「隐私与安全性」里放行。
           APPLE_SIGNING_IDENTITY: ${{ startsWith(matrix.platform, 'macos') && '-' || '' }}
         with:
-          tauriScript: tauri
+          tauriScript: cargo tauri
           tagName: v__VERSION__
           releaseName: 墨笺 v__VERSION__
           releaseBody: |
